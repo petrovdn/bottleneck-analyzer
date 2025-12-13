@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Bottleneck, DialogState, RefinedBottleneck, BusinessData } from '@/types';
 import { 
   ArrowRight, 
@@ -11,13 +11,15 @@ import {
   FileText,
   CheckCircle,
   Loader2,
-  Edit2
+  Edit2,
+  ArrowLeft,
+  FileCode
 } from 'lucide-react';
 import ChatInterface from './ChatInterface';
 import { useAppStore } from '@/store/useAppStore';
 import { BottleneckForm } from './BottleneckEditor';
 
-type TabType = 'overview' | 'dialog';
+type ViewMode = 'dialog' | 'card';
 
 interface BottleneckDetailProps {
   bottleneck: Bottleneck;
@@ -44,12 +46,20 @@ export default function BottleneckDetail({
   onSendMessage,
   isInitializingDialog,
 }: BottleneckDetailProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [viewMode, setViewMode] = useState<ViewMode>('dialog');
   const [isEditing, setIsEditing] = useState(false);
   const { updateBottleneck } = useAppStore();
   
   const hasDialogStarted = dialogState !== null;
   const isDialogComplete = dialogState?.isComplete || false;
+
+  // Автоматически запускаем диалог при первом открытии, если он еще не начат
+  useEffect(() => {
+    if (!hasDialogStarted && viewMode === 'dialog' && !isInitializingDialog) {
+      onStartDialog();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasDialogStarted, viewMode]);
 
   const handleSaveEdit = (updatedBottleneck: Bottleneck) => {
     updateBottleneck(bottleneck.id, updatedBottleneck);
@@ -77,13 +87,34 @@ export default function BottleneckDetail({
               </div>
             )}
           </div>
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="ml-4 p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            title="Редактировать узкое место"
-          >
-            <Edit2 className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {viewMode === 'dialog' ? (
+              <button
+                onClick={() => setViewMode('card')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                title="Открыть полную карточку"
+              >
+                <FileText className="w-4 h-4" />
+                Полная карточка
+              </button>
+            ) : (
+              <button
+                onClick={() => setViewMode('dialog')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded-lg hover:bg-blue-100 transition-colors"
+                title="Вернуться к диалогу"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Диалог с агентом
+              </button>
+            )}
+            <button
+              onClick={() => setIsEditing(!isEditing)}
+              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Редактировать улучшение процесса"
+            >
+              <Edit2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -98,57 +129,30 @@ export default function BottleneckDetail({
         </div>
       )}
       
-      {/* Вкладки */}
-      <div className="bg-white border-b border-gray-200 px-6">
-        <div className="flex gap-1">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-              activeTab === 'overview'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            Обзор
-          </button>
-          <button
-            onClick={() => setActiveTab('dialog')}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-              activeTab === 'dialog'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            Диалог с консультантом
-            {hasDialogStarted && !isDialogComplete && (
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-            )}
-            {isDialogComplete && (
-              <CheckCircle className="w-4 h-4 text-emerald-500" />
-            )}
-          </button>
-        </div>
-      </div>
-      
-      {/* Контент вкладок */}
+      {/* Контент: диалог или карточка */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'overview' ? (
-          <OverviewTab 
-            bottleneck={bottleneck}
-            refinedBottleneck={refinedBottleneck}
-            isLoading={isPromptLoading}
-            onGeneratePrompt={onGeneratePrompt}
-            isDialogComplete={isDialogComplete}
-          />
-        ) : (
-          <DialogTab
+        {viewMode === 'dialog' ? (
+          <DialogView
             dialogState={dialogState}
             isChatLoading={isChatLoading}
             onSendMessage={onSendMessage}
             onStartDialog={onStartDialog}
             isInitializing={isInitializingDialog}
+            refinedBottleneck={refinedBottleneck}
+            onGeneratePrompt={onGeneratePrompt}
+            isPromptLoading={isPromptLoading}
+          />
+        ) : (
+          <CardView
+            bottleneck={bottleneck}
+            refinedBottleneck={refinedBottleneck}
+            isLoading={isPromptLoading}
+            onGeneratePrompt={onGeneratePrompt}
+            isDialogComplete={isDialogComplete}
+            onStartNewDialog={() => {
+              setViewMode('dialog');
+              onStartDialog();
+            }}
           />
         )}
       </div>
@@ -156,19 +160,120 @@ export default function BottleneckDetail({
   );
 }
 
-// Вкладка "Обзор"
-function OverviewTab({
+// Представление диалога
+function DialogView({
+  dialogState,
+  isChatLoading,
+  onSendMessage,
+  onStartDialog,
+  isInitializing,
+  refinedBottleneck,
+  onGeneratePrompt,
+  isPromptLoading,
+}: {
+  dialogState: DialogState | null;
+  isChatLoading: boolean;
+  onSendMessage: (message: string) => void;
+  onStartDialog: () => void;
+  isInitializing: boolean;
+  refinedBottleneck: RefinedBottleneck | undefined;
+  onGeneratePrompt: () => void;
+  isPromptLoading: boolean;
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Диалог */}
+      <div className="flex-1 p-4">
+        <ChatInterface
+          dialogState={dialogState}
+          isLoading={isChatLoading}
+          onSendMessage={onSendMessage}
+          onStartDialog={onStartDialog}
+          isInitializing={isInitializing}
+        />
+      </div>
+
+      {/* Результаты диалога (если завершен) */}
+      {refinedBottleneck && (
+        <div className="border-t border-gray-200 bg-white p-6 max-h-96 overflow-y-auto">
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-emerald-600" />
+            Результаты диалога
+          </h3>
+          
+          <div className="space-y-6">
+            {/* Описание нового процесса */}
+            {refinedBottleneck.processDescription && (
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-blue-600" />
+                  Описание нового процесса
+                </h4>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                  <p className="text-gray-700 whitespace-pre-line leading-relaxed">
+                    {refinedBottleneck.processDescription}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Техническое задание */}
+            {refinedBottleneck.technicalSpec && (
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-purple-600" />
+                  Техническое задание на сервис
+                </h4>
+                <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-lg border border-purple-200">
+                  <pre className="text-gray-700 whitespace-pre-wrap leading-relaxed font-sans text-sm">
+                    {refinedBottleneck.technicalSpec}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {/* Кнопка генерации промпта */}
+            <div className="flex justify-end pt-4 border-t border-gray-200">
+              <button
+                onClick={onGeneratePrompt}
+                disabled={isPromptLoading}
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              >
+                {isPromptLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Генерируем промпт...
+                  </>
+                ) : (
+                  <>
+                    Сгенерировать промпт для реализации
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Представление карточки
+function CardView({
   bottleneck,
   refinedBottleneck,
   isLoading,
   onGeneratePrompt,
   isDialogComplete,
+  onStartNewDialog,
 }: {
   bottleneck: Bottleneck;
   refinedBottleneck: RefinedBottleneck | undefined;
   isLoading: boolean;
   onGeneratePrompt: () => void;
   isDialogComplete: boolean;
+  onStartNewDialog: () => void;
 }) {
   return (
     <div className="h-full overflow-y-auto">
@@ -225,6 +330,26 @@ function OverviewTab({
                   <p className="text-sm text-emerald-700">
                     {refinedBottleneck.dialogSummary}
                   </p>
+                </div>
+              )}
+
+              {/* Описание нового процесса */}
+              {refinedBottleneck.processDescription && (
+                <div className="mt-4 pt-4 border-t border-emerald-200">
+                  <h4 className="font-semibold text-emerald-800 mb-2">Описание нового процесса:</h4>
+                  <p className="text-sm text-emerald-700 whitespace-pre-line">
+                    {refinedBottleneck.processDescription}
+                  </p>
+                </div>
+              )}
+
+              {/* Техническое задание */}
+              {refinedBottleneck.technicalSpec && (
+                <div className="mt-4 pt-4 border-t border-emerald-200">
+                  <h4 className="font-semibold text-emerald-800 mb-2">Техническое задание:</h4>
+                  <pre className="text-sm text-emerald-700 whitespace-pre-wrap font-sans">
+                    {refinedBottleneck.technicalSpec}
+                  </pre>
                 </div>
               )}
             </div>
@@ -291,21 +416,37 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Подсказка о диалоге */}
-        {!isDialogComplete && (
-          <div className="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-blue-800 text-sm flex items-start gap-2">
-              <MessageSquare className="w-5 h-5 flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>Совет:</strong> Перейдите на вкладку &quot;Диалог с консультантом&quot;, 
-                чтобы уточнить детали проблемы и получить более точное решение.
-              </span>
-            </p>
-          </div>
-        )}
-
-        {/* Кнопка генерации промпта */}
+        {/* Кнопки действий */}
         <div className="flex flex-col items-center gap-3">
+          {!isDialogComplete && (
+            <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4 w-full">
+              <p className="text-blue-800 text-sm flex items-start gap-2 mb-3">
+                <MessageSquare className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Совет:</strong> Начните диалог с ИИ-консультантом, чтобы детально 
+                  разобрать текущий процесс и спроектировать улучшенный процесс.
+                </span>
+              </p>
+              <button
+                onClick={onStartNewDialog}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <MessageSquare className="w-5 h-5" />
+                Начать диалог с агентом
+              </button>
+            </div>
+          )}
+
+          {isDialogComplete && (
+            <button
+              onClick={onStartNewDialog}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-300 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Начать новый диалог
+            </button>
+          )}
+
           <button
             onClick={onGeneratePrompt}
             disabled={isLoading}
@@ -335,32 +476,3 @@ function OverviewTab({
     </div>
   );
 }
-
-// Вкладка "Диалог"
-function DialogTab({
-  dialogState,
-  isChatLoading,
-  onSendMessage,
-  onStartDialog,
-  isInitializing,
-}: {
-  dialogState: DialogState | null;
-  isChatLoading: boolean;
-  onSendMessage: (message: string) => void;
-  onStartDialog: () => void;
-  isInitializing: boolean;
-}) {
-  return (
-    <div className="h-full p-4">
-      <ChatInterface
-        dialogState={dialogState}
-        isLoading={isChatLoading}
-        onSendMessage={onSendMessage}
-        onStartDialog={onStartDialog}
-        isInitializing={isInitializing}
-      />
-    </div>
-  );
-}
-
-

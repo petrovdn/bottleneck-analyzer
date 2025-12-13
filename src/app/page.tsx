@@ -339,8 +339,8 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto p-6">
               <div className="max-w-6xl mx-auto">
                 <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Узкие места</h2>
-                  <p className="text-gray-600">Управление узкими местами</p>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Улучшения процесса</h2>
+                  <p className="text-gray-600">Управление улучшениями процесса</p>
                 </div>
                 <BottleneckEditor />
               </div>

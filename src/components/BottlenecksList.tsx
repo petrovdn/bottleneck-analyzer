@@ -53,10 +53,10 @@ export default function BottlenecksList({
     <div className="w-full lg:w-96 bg-white border-r border-gray-200 overflow-y-auto flex-shrink-0">
       <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          Найденные узкие места
+          Улучшения процесса
         </h2>
         <p className="text-sm text-gray-600">
-          {bottlenecks.length} проблем{bottlenecks.length === 1 ? 'а' : ''} обнаружено
+          {bottlenecks.length} улучшени{bottlenecks.length === 1 ? 'е' : 'й'} обнаружено
           {refinedCount > 0 && (
             <span className="ml-2 text-emerald-600">
               • {refinedCount} уточнено

@@ -344,7 +344,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
   };
 
   const handleDelete = (bottleneckId: string) => {
-    if (confirm('Вы уверены, что хотите удалить это узкое место?')) {
+    if (confirm('Вы уверены, что хотите удалить это улучшение процесса?')) {
       deleteBottleneck(bottleneckId);
       if (selectedBottleneck?.id === bottleneckId) {
         navigateToBottlenecksList();
@@ -356,7 +356,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     return (
       <div className="p-6 bg-white rounded-lg border border-gray-200">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Создать новое узкое место</h2>
+          <h2 className="text-xl font-bold text-gray-900">Создать новое улучшение процесса</h2>
           <button
             onClick={() => setIsCreating(false)}
             className="text-gray-400 hover:text-gray-600"
@@ -382,7 +382,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     return (
       <div className="p-6 bg-white rounded-lg border border-gray-200">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Редактировать узкое место</h2>
+          <h2 className="text-xl font-bold text-gray-900">Редактировать улучшение процесса</h2>
           <button
             onClick={() => setEditingId(null)}
             className="text-gray-400 hover:text-gray-600"
@@ -408,7 +408,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <Plus className="w-4 h-4" />
-          Создать узкое место
+          Создать улучшение процесса
         </button>
       </div>
 

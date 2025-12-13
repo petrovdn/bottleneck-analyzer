@@ -96,6 +96,8 @@ export interface RefinedBottleneck extends Bottleneck {
   implementationDetails: string;     // Детали реализации
   dialogSummary: string;             // Краткое резюме диалога
   refinedAt: string;                 // Когда было уточнено
+  processDescription: string;        // Краткое описание нового процесса
+  technicalSpec: string;             // Техническое задание на создание сервиса
 }
 
 export interface ChatMessage {

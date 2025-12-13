@@ -34,18 +34,18 @@ const phaseConfig: Record<DialogPhase, {
   description: string;
 }> = {
   clarifying: {
-    label: 'Уточнение',
+    label: 'AS-IS',
     icon: <MessageCircle className="w-4 h-4" />,
     color: 'text-blue-600',
     bgColor: 'bg-blue-100',
-    description: 'Уточняем детали проблемы',
+    description: 'Выясняем текущий процесс',
   },
   deep_dive: {
-    label: 'Анализ',
+    label: 'TO-BE',
     icon: <Lightbulb className="w-4 h-4" />,
     color: 'text-amber-600',
     bgColor: 'bg-amber-100',
-    description: 'Глубокий анализ причин',
+    description: 'Определяем желаемый процесс',
   },
   solution_design: {
     label: 'Решение',
@@ -55,11 +55,11 @@ const phaseConfig: Record<DialogPhase, {
     description: 'Проектируем решение',
   },
   implementation: {
-    label: 'Реализация',
+    label: 'ТЗ',
     icon: <Wrench className="w-4 h-4" />,
     color: 'text-purple-600',
     bgColor: 'bg-purple-100',
-    description: 'Обсуждаем план внедрения',
+    description: 'Создаем техническое задание',
   },
   complete: {
     label: 'Готово',
@@ -216,11 +216,11 @@ function StartDialogButton({ onClick, isLoading }: { onClick: () => void; isLoad
           <Sparkles className="w-10 h-10 text-white" />
         </div>
         <h3 className="text-xl font-bold text-gray-900 mb-2">
-          Давайте уточним проблему вместе
+          Давайте разберем процесс вместе
         </h3>
         <p className="text-gray-600 max-w-md">
-          Я задам несколько вопросов, чтобы лучше понять вашу ситуацию 
-          и предложить максимально подходящее решение.
+          Я помогу вам детально описать текущий процесс (AS-IS), 
+          спроектировать улучшенный процесс (TO-BE) и создать техническое задание на сервис.
         </p>
       </motion.div>
       
@@ -380,4 +380,5 @@ export default function ChatInterface({
     </div>
   );
 }
+
 
