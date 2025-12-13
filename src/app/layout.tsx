@@ -5,7 +5,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 
 export const metadata: Metadata = {
-  title: 'Анализатор узких мест бизнеса',
+  title: 'Повышение результативности и эффективности работы',
   description: 'Мультиагентный консультант по оптимизации бизнес-процессов',
 }
 
@@ -20,4 +20,5 @@ export default function RootLayout({
     </html>
   )
 }
+
 

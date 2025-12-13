@@ -30,7 +30,7 @@ export default function Navigation() {
           {/* Логотип/Название */}
           <div className="flex items-center">
             <Home className="w-6 h-6 text-blue-600 mr-2" />
-            <span className="text-xl font-bold text-gray-900">Анализ узких мест</span>
+            <span className="text-xl font-bold text-gray-900">Повышение результативности и эффективности работы</span>
           </div>
 
           {/* Навигационные ссылки */}

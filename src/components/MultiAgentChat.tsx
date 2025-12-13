@@ -414,13 +414,13 @@ export default function MultiAgentChat({
       <PhaseProgress currentPhase={multiAgentState.phase} />
       
       {/* Описание текущей фазы */}
-      <div className="px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100">
-        <p className="text-sm text-gray-600 flex items-center gap-2">
-          {phaseConfig[multiAgentState.phase].icon}
-          {phaseConfig[multiAgentState.phase].description}
+      <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100 min-h-[60px]">
+        <p className="text-sm text-gray-600 flex items-start gap-2 break-words">
+          <span className="flex-shrink-0 mt-0.5">{phaseConfig[multiAgentState.phase].icon}</span>
+          <span className="flex-1">{phaseConfig[multiAgentState.phase].description}</span>
         </p>
         {multiAgentState.thinking && (
-          <p className="text-xs text-gray-500 mt-1 italic">{multiAgentState.thinking}</p>
+          <p className="text-xs text-gray-500 mt-2 italic break-words">{multiAgentState.thinking}</p>
         )}
       </div>
       
