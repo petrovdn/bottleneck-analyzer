@@ -44,23 +44,21 @@ ${messagesText}
 - potentialGain: "${currentBottleneck.potentialGain}"
 - asIsProcess: "${currentBottleneck.asIsProcess}"
 - toBeProcess: "${currentBottleneck.toBeProcess}"
-- suggestedAgents: ${JSON.stringify(currentBottleneck.suggestedAgents)}
-- mcpToolsNeeded: ${JSON.stringify(currentBottleneck.mcpToolsNeeded)}
 
 ТВОЯ ЗАДАЧА:
 Проанализируй диалог и определи, для каких полей можно предложить улучшенные значения на основе информации из диалога.
 
 Для каждого поля, которое можно улучшить, верни:
-- field: название поля (title, processArea, problemDescription, currentImpact, priority, potentialGain, asIsProcess, toBeProcess, suggestedAgents, mcpToolsNeeded)
+- field: название поля (только: title, processArea, problemDescription, currentImpact, priority, potentialGain, asIsProcess, toBeProcess)
 - currentValue: текущее значение поля
 - suggestedValue: предлагаемое улучшенное значение
 - reason: краткое обоснование, почему это изменение улучшит карточку
 
 ВАЖНО:
 - Предлагай изменения только если в диалоге есть новая информация, которая улучшает поле
-- Для массивов (suggestedAgents, mcpToolsNeeded) возвращай JSON-массив строк
 - Для priority возвращай одно из значений: "high", "medium", "low"
 - Не предлагай изменения, если текущее значение уже хорошее или если нет новой информации
+- НЕ предлагай изменения для полей suggestedAgents и mcpToolsNeeded (эти поля удалены)
 
 Верни JSON массив предложений:
 [
@@ -85,11 +83,10 @@ ${messagesText}
       // Валидация и фильтрация предложений
       const validSuggestions: FieldSuggestion[] = suggestions
         .filter((s: any) => {
-          // Проверяем, что поле существует в Bottleneck
+          // Проверяем, что поле существует в Bottleneck (исключаем suggestedAgents и mcpToolsNeeded)
           const validFields: (keyof Bottleneck)[] = [
             'title', 'processArea', 'problemDescription', 'currentImpact',
-            'priority', 'potentialGain', 'asIsProcess', 'toBeProcess',
-            'suggestedAgents', 'mcpToolsNeeded'
+            'priority', 'potentialGain', 'asIsProcess', 'toBeProcess'
           ];
           return validFields.includes(s.field) && 
                  s.currentValue !== undefined &&
@@ -143,6 +140,8 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
 - Задавай открытые вопросы о текущем процессе
 - Уточняй детали: кто, что, когда, как, почему
 - Переформулируй ответы для подтверждения понимания
+- Будь КРАТКИМ: каждый ответ не более 400 символов
+- Задавай только один вопрос за раз
 
 ПРИМЕРЫ ВОПРОСОВ:
 - "Расскажите подробнее, как сейчас происходит [процесс]?"
@@ -167,6 +166,8 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
 - Задавай вопросы о желаемых результатах
 - Проверяй реалистичность ожиданий
 - Помогай формулировать конкретные цели
+- Будь КРАТКИМ: каждый ответ не более 400 символов
+- Задавай только один вопрос за раз
 
 ПРИМЕРЫ ФРАЗ:
 - "Как вы видите идеальный процесс? Опишите пошагово."
@@ -190,6 +191,8 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
 - Описывай новый процесс пошагово
 - Предлагай варианты, обсуждай плюсы и минусы
 - Учитывай ограничения и возможности
+- Будь КРАТКИМ: каждый ответ не более 400 символов
+- Задавай только один вопрос за раз
 
 СТРУКТУРА РЕШЕНИЯ:
 1. Описание нового процесса (как будет работать)
@@ -203,17 +206,26 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
   implementation: `Ты — эксперт-консультант по оптимизации бизнес-процессов. Сейчас фаза СОЗДАНИЯ ТЕХНИЧЕСКОГО ЗАДАНИЯ.
 
 ТВОЯ ЗАДАЧА:
-1. Создать детальное техническое задание на сервис
-2. Описать функциональные требования
-3. Определить технические требования
+1. Задать несколько уточняющих вопросов (3-5 вопросов) для создания детального ТЗ
+2. После сбора информации создать техническое задание размером около 1000 символов
+3. Описать функциональные и технические требования
 4. Указать этапы реализации
 
 СТИЛЬ ОБЩЕНИЯ:
 - Будь конкретным и техническим
-- Структурируй информацию четко
-- Уточняй детали если нужно
+- Задавай несколько уточняющих вопросов перед генерацией ТЗ
+- Вопросы должны касаться: функциональности, технических требований, интеграций, этапов разработки
+- Будь КРАТКИМ: каждый вопрос не более 400 символов
+- Задавай вопросы по одному, жди ответа перед следующим вопросом
 
-СТРУКТУРА ТЗ:
+ПРОЦЕСС:
+1. Задай первый вопрос о функциональных требованиях
+2. После ответа задай второй вопрос о технических требованиях
+3. После ответа задай третий вопрос об интеграциях или этапах
+4. Продолжай задавать вопросы (всего 3-5 вопросов)
+5. После сбора всей информации создай ТЗ размером около 1000 символов
+
+СТРУКТУРА ТЗ (когда будешь создавать):
 1. Назначение сервиса
 2. Функциональные требования
 3. Технические требования
@@ -221,9 +233,9 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
 5. Этапы разработки
 6. Критерии приемки
 
-Когда ТЗ готово, подведи итог и заверши диалог.`,
+ВАЖНО: Не создавай ТЗ сразу, сначала задай все уточняющие вопросы. Только после получения ответов на все вопросы создавай ТЗ.`,
 
-  complete: `Диалог завершен. Резюмируй результаты: краткое описание нового процесса и готовность ТЗ.`
+  complete: `Диалог завершен. Резюмируй результаты: краткое описание нового процесса и готовность ТЗ. Будь КРАТКИМ: не более 400 символов.`
 };
 
 // Создание LLM
@@ -321,7 +333,12 @@ ${state.clarifications.length > 0 ? state.clarifications.map((c, idx) => `${idx 
 
 ${state.proposedSolution ? `ПРЕДЛОЖЕННОЕ РЕШЕНИЕ:\n${state.proposedSolution}` : ''}
 
-Отвечай на русском языке. Будь конкретным и полезным.`;
+ВАЖНО:
+- Отвечай на русском языке
+- Будь конкретным и полезным
+- Твой ответ должен быть КРАТКИМ (не более 400 символов)
+- Задавай только один конкретный вопрос за раз
+- Избегай длинных объяснений, будь лаконичным`;
 
   // Формируем полный промпт с историей
   const historyText = state.messages.map(m => 
@@ -331,9 +348,25 @@ ${state.proposedSolution ? `ПРЕДЛОЖЕННОЕ РЕШЕНИЕ:\n${state.pr
   const fullPrompt = `${systemPrompt}\n\n${historyText ? `История диалога:\n${historyText}\n\n` : ''}Пользователь: ${state.currentUserMessage}\n\nКонсультант:`;
   
   const response = await llm.invoke(fullPrompt);
+  let responseContent = response.content.toString().trim();
+  
+  // Ограничиваем длину ответа до 400 символов
+  if (responseContent.length > 400) {
+    // Пытаемся обрезать по последнему предложению
+    const lastPeriod = responseContent.lastIndexOf('.', 397);
+    const lastQuestion = responseContent.lastIndexOf('?', 397);
+    const lastExclamation = responseContent.lastIndexOf('!', 397);
+    const lastPunctuation = Math.max(lastPeriod, lastQuestion, lastExclamation);
+    
+    if (lastPunctuation > 300) {
+      responseContent = responseContent.substring(0, lastPunctuation + 1);
+    } else {
+      responseContent = responseContent.substring(0, 397) + '...';
+    }
+  }
   
   return {
-    responseMessage: response.content.toString(),
+    responseMessage: responseContent,
     messages: [
       ...state.messages,
       { role: 'user' as const, content: state.currentUserMessage },
@@ -343,12 +376,67 @@ ${state.proposedSolution ? `ПРЕДЛОЖЕННОЕ РЕШЕНИЕ:\n${state.pr
   };
 }
 
-// 3. Проверка и извлечение решения (для фазы solution_design)
+// 3. Проверка и извлечение решения (для фазы solution_design и implementation)
 async function checkSolution(state: GraphState): Promise<Partial<GraphState>> {
   if (state.dialogPhase !== 'solution_design' && state.dialogPhase !== 'implementation') {
     return {};
   }
   
+  // Для фазы implementation считаем количество вопросов от агента
+  if (state.dialogPhase === 'implementation') {
+    const implementationMessages = state.messages.filter(m => 
+      m.role === 'assistant' && m.content.includes('?')
+    );
+    const questionsCount = implementationMessages.length;
+    
+    // Если задано меньше 3 вопросов, продолжаем задавать вопросы
+    if (questionsCount < 3) {
+      return {};
+    }
+    
+    // Если задано достаточно вопросов, проверяем, готово ли ТЗ
+    const llm = createLLM();
+    const extractPrompt = `На основе диалога определи, готово ли техническое задание.
+
+ИСТОРИЯ ДИАЛОГА:
+${state.messages.map(m => 
+  m.role === 'user' ? `Пользователь: ${m.content}` : `Консультант: ${m.content}`
+).join('\n\n')}
+
+Последний ответ консультанта: ${state.responseMessage}
+
+Вопросов задано: ${questionsCount}
+
+Если консультант уже создал техническое задание (ТЗ) в последнем ответе, извлеки его. 
+Если ТЗ еще не создано, верни hasTechnicalSpec: false.
+
+Формат ответа JSON:
+{
+  "hasTechnicalSpec": true/false,
+  "technicalSpec": "текст ТЗ если есть"
+}`;
+
+    const response = await llm.invoke(extractPrompt);
+    const content = response.content.toString();
+    
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        if (result.hasTechnicalSpec && result.technicalSpec) {
+          return {
+            proposedSolution: result.technicalSpec,
+          };
+        }
+      }
+    } catch (e) {
+      console.error('Error extracting technical spec:', e);
+    }
+    
+    return {};
+  }
+  
+  // Для фазы solution_design извлекаем решение
   const llm = createLLM();
   
   const extractPrompt = `На основе диалога, извлеки предложенное решение.
@@ -648,7 +736,7 @@ ${solution}
 ДИАЛОГ:
 ${messagesText}
 
-Создай детальное техническое задание, включающее:
+Создай детальное техническое задание размером около 1000 символов, включающее:
 
 1. НАЗНАЧЕНИЕ СЕРВИСА
    - Цель и задачи сервиса
@@ -678,10 +766,27 @@ ${messagesText}
    - Метрики успеха
    - Условия готовности
 
-Формат: структурированный документ на русском языке.`;
+ВАЖНО:
+- ТЗ должно быть размером около 1000 символов (не меньше 800, не больше 1200)
+- Будь конкретным и детальным
+- Структурируй информацию четко
+- Формат: структурированный документ на русском языке`;
 
   const response = await llm.invoke(prompt);
-  return response.content.toString();
+  let content = response.content.toString();
+  
+  // Ограничиваем размер ТЗ до 1200 символов, но стараемся сохранить около 1000
+  if (content.length > 1200) {
+    // Пытаемся обрезать по последнему предложению
+    const lastPeriod = content.lastIndexOf('.', 1200);
+    if (lastPeriod > 800) {
+      content = content.substring(0, lastPeriod + 1);
+    } else {
+      content = content.substring(0, 1200) + '...';
+    }
+  }
+  
+  return content;
 }
 
 // Инициализация диалога - первое сообщение от агента
@@ -691,6 +796,16 @@ export async function initializeDialog(
 ): Promise<DialogState> {
   const llm = createLLM();
   
+  // Проверяем, является ли точка улучшения новой (пустой)
+  const isNewBottleneck = !bottleneck.title && !bottleneck.problemDescription;
+  
+  const bottleneckInfo = isNewBottleneck 
+    ? 'Пользователь создает новую точку улучшения процесса. Поля еще не заполнены.'
+    : `Название: ${bottleneck.title || 'не указано'}
+Область: ${bottleneck.processArea || 'не указано'}
+Проблема: ${bottleneck.problemDescription || 'не указано'}
+Текущее влияние: ${bottleneck.currentImpact || 'не указано'}`;
+
   const prompt = `Ты — эксперт-консультант по оптимизации бизнес-процессов. 
 Начни диалог с пользователем для детального понимания текущего процесса (AS-IS) и проектирования улучшенного процесса (TO-BE).
 
@@ -700,39 +815,85 @@ export async function initializeDialog(
 Процессы: ${businessData.workflows}
 KPI: ${businessData.kpis}
 
-УЛУЧШЕНИЕ ПРОЦЕССА (первичный анализ):
-Название: ${bottleneck.title}
-Область: ${bottleneck.processArea}
-Проблема: ${bottleneck.problemDescription}
-Текущее влияние: ${bottleneck.currentImpact}
+ИНФОРМАЦИЯ О ТОЧКЕ УЛУЧШЕНИЯ:
+${bottleneckInfo}
 
 ТВОЯ ЗАДАЧА:
-Напиши приветственное сообщение, в котором:
-1. Покажи что понимаешь контекст и выявленную проблему
-2. Объясни, что вы вместе будете детально разбирать текущий процесс (AS-IS), а затем проектировать улучшенный процесс (TO-BE)
-3. Задай первый вопрос о том, как процесс работает сейчас
+Напиши краткое приветственное сообщение (не более 400 символов), в котором:
+${isNewBottleneck 
+  ? '1. Поприветствуй пользователя и предложи помочь создать новую точку улучшения процесса\n2. Задай первый вопрос о том, какой процесс нужно улучшить и в чем проблема'
+  : '1. Покажи что понимаешь контекст и выявленную проблему\n2. Объясни, что вы вместе будете детально разбирать текущий процесс (AS-IS), а затем проектировать улучшенный процесс (TO-BE)\n3. Задай первый вопрос о том, как процесс работает сейчас'}
 
-Будь дружелюбным и профессиональным. Пиши на русском.`;
+ВАЖНО:
+- Будь дружелюбным и профессиональным
+- Пиши на русском
+- Сообщение должно быть КРАТКИМ (не более 400 символов)
+- Задавай только один конкретный вопрос`;
 
-  const response = await llm.invoke(prompt);
-  
-  const initialMessage: ChatMessage = {
-    id: uuidv4(),
-    role: 'assistant',
-    content: response.content.toString(),
-    timestamp: new Date().toISOString(),
-    phase: 'clarifying',
-  };
-  
-  return {
-    bottleneckId: bottleneck.id,
-    phase: 'clarifying',
-    messages: [initialMessage],
-    insights: [],
-    clarifications: [],
-    proposedSolution: null,
-    isComplete: false,
-  };
+  try {
+    console.log('Initializing dialog for bottleneck:', bottleneck.id, 'isNew:', isNewBottleneck);
+    const response = await llm.invoke(prompt);
+    let content = response.content?.toString().trim() || '';
+    
+    console.log('LLM response length:', content.length, 'content preview:', content.substring(0, 100));
+    
+    // Если ответ пустой, используем fallback сообщение
+    if (!content || content.length === 0) {
+      console.log('Using fallback message for new bottleneck');
+      content = isNewBottleneck
+        ? 'Привет! Я помогу вам создать новую точку улучшения процесса. Расскажите, какой процесс вы хотите улучшить и в чем основная проблема?'
+        : 'Привет! Давайте вместе разберем текущий процесс и спроектируем улучшенный вариант. Расскажите, как сейчас работает процесс?';
+    }
+    
+    // Ограничиваем длину ответа до 400 символов
+    if (content.length > 400) {
+      content = content.substring(0, 397) + '...';
+    }
+    
+    const initialMessage: ChatMessage = {
+      id: uuidv4(),
+      role: 'assistant',
+      content: content,
+      timestamp: new Date().toISOString(),
+      phase: 'clarifying',
+    };
+    
+    console.log('Created initial message:', initialMessage.content.substring(0, 50));
+    
+    const dialogState: DialogState = {
+      bottleneckId: bottleneck.id,
+      phase: 'clarifying',
+      messages: [initialMessage],
+      insights: [],
+      clarifications: [],
+      proposedSolution: null,
+      isComplete: false,
+    };
+    
+    return dialogState;
+  } catch (error) {
+    console.error('Error in initializeDialog:', error);
+    // В случае ошибки возвращаем fallback сообщение
+    const fallbackContent = isNewBottleneck
+      ? 'Привет! Я помогу вам создать новую точку улучшения процесса. Расскажите, какой процесс вы хотите улучшить и в чем основная проблема?'
+      : 'Привет! Давайте вместе разберем текущий процесс и спроектируем улучшенный вариант. Расскажите, как сейчас работает процесс?';
+    
+    return {
+      bottleneckId: bottleneck.id,
+      phase: 'clarifying',
+      messages: [{
+        id: uuidv4(),
+        role: 'assistant',
+        content: fallbackContent,
+        timestamp: new Date().toISOString(),
+        phase: 'clarifying',
+      }],
+      insights: [],
+      clarifications: [],
+      proposedSolution: null,
+      isComplete: false,
+    };
+  }
 }
 
 

@@ -20,6 +20,8 @@ export default function Navigation() {
     bottlenecks,
     multiAgentState,
     setStage,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
   } = useAppStore();
 
   const hasBottlenecks = bottlenecks.length > 0;
@@ -59,6 +61,19 @@ export default function Navigation() {
             {/* Список точек улучшения */}
             <button
               onClick={() => {
+                // Проверяем несохраненные изменения
+                if (hasUnsavedChanges && (viewMode === 'bottleneck_detail' || viewMode === 'bottlenecks_list')) {
+                  const userChoice = confirm('У вас есть несохраненные изменения. Сохранить перед переходом к списку?\n\nНажмите OK для сохранения, Отмена - чтобы перейти без сохранения.');
+                  if (userChoice) {
+                    // Пользователь хочет сохранить - показываем инструкцию
+                    alert('Пожалуйста, нажмите кнопку "Сохранить" в форме перед переходом.');
+                    return; // Не переходим, ждем сохранения
+                  } else {
+                    // Пользователь решил не сохранять - сбрасываем флаг и переходим
+                    setHasUnsavedChanges(false);
+                  }
+                }
+                
                 if (stage === 'discovery') {
                   setStage('bottlenecks');
                 }

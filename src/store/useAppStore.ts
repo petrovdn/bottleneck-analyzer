@@ -24,6 +24,7 @@ interface AppState {
   multiAgentState: MultiAgentState | null;
   isMultiAgentLoading: boolean;
   viewMode: ViewMode;
+  hasUnsavedChanges: boolean;
 }
 
 interface AppActions {
@@ -62,6 +63,9 @@ interface AppActions {
   // Сохранение/загрузка состояния
   saveState: () => void;
   loadState: () => void;
+  
+  // Управление несохраненными изменениями
+  setHasUnsavedChanges: (hasChanges: boolean) => void;
 }
 
 const initialState: AppState = {
@@ -78,6 +82,7 @@ const initialState: AppState = {
   multiAgentState: null,
   isMultiAgentLoading: false,
   viewMode: 'multi_agent_dialog',
+  hasUnsavedChanges: false,
 };
 
 // Функция для сериализации Map
@@ -206,6 +211,9 @@ export const useAppStore = create<AppState & AppActions>()(
   loadState: () => {
     // Состояние загружается автоматически через persist middleware
   },
+  
+  // Управление несохраненными изменениями
+  setHasUnsavedChanges: (hasChanges: boolean) => set({ hasUnsavedChanges: hasChanges }),
     }),
     {
       name: 'bottleneck-analyzer-storage',

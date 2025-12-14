@@ -355,9 +355,9 @@ export default function ChatInterface({
                 : "Напишите ваш ответ..."
             }
             disabled={isLoading || dialogState.isComplete}
-            rows={1}
+            rows={3}
             className="flex-1 px-4 py-3 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
-            style={{ minHeight: '48px', maxHeight: '120px' }}
+            style={{ minHeight: '84px', maxHeight: '120px' }}
           />
           <button
             type="submit"
