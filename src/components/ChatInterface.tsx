@@ -13,7 +13,8 @@ import {
   Wrench,
   CheckCircle,
   ChevronDown,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { ChatMessage, DialogPhase, DialogState } from '@/types';
 
@@ -23,6 +24,7 @@ interface ChatInterfaceProps {
   onSendMessage: (message: string) => void;
   onStartDialog: () => void;
   isInitializing: boolean;
+  onDeleteLastMessages?: (count: number) => void;
 }
 
 // Конфигурация фаз диалога
@@ -252,6 +254,7 @@ export default function ChatInterface({
   onSendMessage,
   onStartDialog,
   isInitializing,
+  onDeleteLastMessages,
 }: ChatInterfaceProps) {
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -349,32 +352,45 @@ export default function ChatInterface({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              dialogState.isComplete 
-                ? "Диалог завершен. Можете сгенерировать промпт."
-                : "Напишите ваш ответ..."
-            }
-            disabled={isLoading || dialogState.isComplete}
+            placeholder="Напишите ваш ответ..."
+            disabled={isLoading}
             rows={3}
             className="flex-1 px-4 py-3 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
             style={{ minHeight: '84px', maxHeight: '120px' }}
           />
+          <div className="flex flex-col gap-2">
           <button
             type="submit"
-            disabled={!inputValue.trim() || isLoading || dialogState.isComplete}
-            className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Send className="w-5 h-5" />
+            disabled={!inputValue.trim() || isLoading}
+              className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {isLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+            {onDeleteLastMessages && dialogState.messages.length > 0 && !isLoading && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Удалить последнее сообщение агента и ваш последний вопрос?')) {
+                    onDeleteLastMessages(2);
+                  }
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all"
+                title="Удалить последние сообщения"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             )}
-          </button>
+          </div>
         </div>
         
         {/* Подсказка */}
         <p className="text-xs text-gray-400 mt-2 text-center">
           Enter — отправить • Shift+Enter — новая строка
+          {onDeleteLastMessages && dialogState.messages.length > 0 && ' • Корзина — удалить последние сообщения'}
         </p>
       </form>
     </div>

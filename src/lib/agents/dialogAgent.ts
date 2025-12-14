@@ -7,7 +7,8 @@ import {
   ChatMessage, 
   DialogPhase,
   RefinedBottleneck,
-  FieldSuggestion
+  FieldSuggestion,
+  Priority
 } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -336,9 +337,9 @@ ${state.proposedSolution ? `ПРЕДЛОЖЕННОЕ РЕШЕНИЕ:\n${state.pr
 ВАЖНО:
 - Отвечай на русском языке
 - Будь конкретным и полезным
-- Твой ответ должен быть КРАТКИМ (не более 400 символов)
-- Задавай только один конкретный вопрос за раз
-- Избегай длинных объяснений, будь лаконичным`;
+${state.dialogPhase === 'implementation' 
+  ? '- Когда генерируешь ТЗ, пиши его ПОЛНОСТЬЮ, без ограничений по длине'
+  : '- Твой ответ должен быть КРАТКИМ (не более 400 символов)\n- Задавай только один конкретный вопрос за раз\n- Избегай длинных объяснений, будь лаконичным'}`;
 
   // Формируем полный промпт с историей
   const historyText = state.messages.map(m => 
@@ -350,8 +351,9 @@ ${state.proposedSolution ? `ПРЕДЛОЖЕННОЕ РЕШЕНИЕ:\n${state.pr
   const response = await llm.invoke(fullPrompt);
   let responseContent = response.content.toString().trim();
   
-  // Ограничиваем длину ответа до 400 символов
-  if (responseContent.length > 400) {
+  // Ограничиваем длину ответа до 400 символов ТОЛЬКО если это не фаза implementation
+  // В фазе implementation может быть ТЗ, которое должно быть полным
+  if (state.dialogPhase !== 'implementation' && responseContent.length > 400) {
     // Пытаемся обрезать по последнему предложению
     const lastPeriod = responseContent.lastIndexOf('.', 397);
     const lastQuestion = responseContent.lastIndexOf('?', 397);
@@ -407,13 +409,15 @@ ${state.messages.map(m =>
 
 Вопросов задано: ${questionsCount}
 
-Если консультант уже создал техническое задание (ТЗ) в последнем ответе, извлеки его. 
+Если консультант уже создал техническое задание (ТЗ) в последнем ответе, извлеки его полностью. 
 Если ТЗ еще не создано, верни hasTechnicalSpec: false.
+
+ВАЖНО: Если ТЗ есть, извлеки его ПОЛНОСТЬЮ, не обрезай.
 
 Формат ответа JSON:
 {
   "hasTechnicalSpec": true/false,
-  "technicalSpec": "текст ТЗ если есть"
+  "technicalSpec": "полный текст ТЗ если есть"
 }`;
 
     const response = await llm.invoke(extractPrompt);
@@ -424,13 +428,50 @@ ${state.messages.map(m =>
       if (jsonMatch) {
         const result = JSON.parse(jsonMatch[0]);
         if (result.hasTechnicalSpec && result.technicalSpec) {
+          // Если ТЗ уже есть в ответе, возвращаем его
           return {
             proposedSolution: result.technicalSpec,
+            isComplete: true,
           };
         }
       }
     } catch (e) {
       console.error('Error extracting technical spec:', e);
+    }
+    
+    // Если ТЗ еще не создано, но задано достаточно вопросов, генерируем его
+    // Это происходит, когда пользователь просит создать ТЗ
+    if (state.currentUserMessage.toLowerCase().includes('тз') || 
+        state.currentUserMessage.toLowerCase().includes('техническое задание') ||
+        state.currentUserMessage.toLowerCase().includes('напиши тз')) {
+      
+      const technicalSpec = await generateTechnicalSpec(
+        state.businessData,
+        state.bottleneck,
+        {
+          bottleneckId: state.bottleneck.id,
+          phase: state.dialogPhase,
+          messages: state.messages.map(m => ({
+            id: uuidv4(),
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: m.content,
+            timestamp: new Date().toISOString(),
+            phase: state.dialogPhase,
+          })),
+          insights: state.insights,
+          clarifications: state.clarifications,
+          proposedSolution: state.proposedSolution || '',
+          isComplete: false,
+        },
+        state.proposedSolution || ''
+      );
+      
+      // Включаем ТЗ в ответ агента
+      return {
+        proposedSolution: technicalSpec,
+        responseMessage: state.responseMessage + '\n\n' + technicalSpec,
+        isComplete: true,
+      };
     }
     
     return {};
@@ -531,11 +572,36 @@ export async function processDialogMessage(
   // 4. Извлекаем предложения изменений полей из диалога
   const fieldSuggestions = await extractFieldSuggestions(completeState);
   
+  // 5. Проверяем, просит ли пользователь промпт для Cursor
+  let finalResponseContent = completeState.responseMessage;
+  const userMessageLower = userMessage.toLowerCase();
+  const isPromptRequest = userMessageLower.includes('промпт') || 
+                          userMessageLower.includes('prompt') ||
+                          userMessageLower.includes('курсор') ||
+                          userMessageLower.includes('cursor');
+  
+  if (isPromptRequest && completeState.proposedSolution) {
+    console.log('Generating Cursor prompt...');
+    try {
+      const cursorPrompt = await generateCursorPrompt(
+        businessData,
+        bottleneck,
+        dialogState,
+        completeState.proposedSolution
+      );
+      finalResponseContent = completeState.responseMessage + '\n\n**ПРОМПТ ДЛЯ CURSOR:**\n\n' + cursorPrompt;
+      console.log('Cursor prompt generated, length:', cursorPrompt.length);
+    } catch (error) {
+      console.error('Error generating Cursor prompt:', error);
+      finalResponseContent = completeState.responseMessage + '\n\nОшибка при генерации промпта для Cursor. Попробуйте еще раз.';
+    }
+  }
+  
   // Создаем сообщение ответа
   const responseMessage: ChatMessage = {
     id: uuidv4(),
     role: 'assistant',
-    content: completeState.responseMessage,
+    content: finalResponseContent,
     timestamp: new Date().toISOString(),
     phase: completeState.dialogPhase,
     thinking: completeState.thinking,
@@ -592,10 +658,52 @@ export async function processDialogMessage(
     };
   }
   
+  // Создаем updatedBottleneck на основе fieldSuggestions
+  let updatedBottleneck: Partial<Bottleneck> | undefined;
+  if (fieldSuggestions.length > 0) {
+    updatedBottleneck = {};
+    fieldSuggestions.forEach(suggestion => {
+      try {
+        if (!updatedBottleneck) return; // Защита от undefined
+        
+        let newValue: any = suggestion.suggestedValue;
+        
+        // Парсим JSON для массивов
+        if (suggestion.field === 'suggestedAgents' || suggestion.field === 'mcpToolsNeeded') {
+          try {
+            newValue = JSON.parse(suggestion.suggestedValue);
+          } catch {
+            newValue = suggestion.suggestedValue.split(',').map(s => s.trim()).filter(s => s);
+          }
+        }
+        
+        // Обрабатываем приоритет
+        if (suggestion.field === 'priority') {
+          const validPriorities: Priority[] = ['high', 'medium', 'low'];
+          if (validPriorities.includes(newValue as Priority)) {
+            newValue = newValue as Priority;
+          } else {
+            return; // Пропускаем невалидный приоритет
+          }
+        }
+        
+        updatedBottleneck[suggestion.field] = newValue;
+      } catch (e) {
+        console.error('Error processing suggestion for updatedBottleneck:', e);
+      }
+    });
+    
+    // Если нет реальных изменений, не возвращаем updatedBottleneck
+    if (Object.keys(updatedBottleneck).length === 0) {
+      updatedBottleneck = undefined;
+    }
+  }
+
   return {
     message: responseMessage,
     updatedDialogState,
     refinedBottleneck,
+    updatedBottleneck,
     fieldSuggestions: fieldSuggestions.length > 0 ? fieldSuggestions : undefined,
   };
 }
@@ -767,24 +875,69 @@ ${messagesText}
    - Условия готовности
 
 ВАЖНО:
-- ТЗ должно быть размером около 1000 символов (не меньше 800, не больше 1200)
+- ТЗ должно быть ПОЛНЫМ и ДЕТАЛЬНЫМ (не ограничивай длину, пиши столько, сколько нужно)
 - Будь конкретным и детальным
 - Структурируй информацию четко
-- Формат: структурированный документ на русском языке`;
+- Опиши все разделы полностью
+- Формат: структурированный документ на русском языке
+- НЕ обрезай текст, пиши полное ТЗ`;
 
   const response = await llm.invoke(prompt);
   let content = response.content.toString();
   
-  // Ограничиваем размер ТЗ до 1200 символов, но стараемся сохранить около 1000
-  if (content.length > 1200) {
-    // Пытаемся обрезать по последнему предложению
-    const lastPeriod = content.lastIndexOf('.', 1200);
-    if (lastPeriod > 800) {
-      content = content.substring(0, lastPeriod + 1);
-    } else {
-      content = content.substring(0, 1200) + '...';
-    }
-  }
+  // НЕ ограничиваем размер ТЗ - оно должно быть полным
+  // Если LLM вернул обрезанный ответ, это проблема LLM, а не нашей логики
+  
+  return content;
+}
+
+// Генерация промпта для Cursor
+async function generateCursorPrompt(
+  businessData: BusinessData,
+  bottleneck: Bottleneck,
+  dialogState: DialogState,
+  technicalSpec: string
+): Promise<string> {
+  const llm = createLLM();
+  
+  const messagesText = dialogState.messages
+    .map(m => `${m.role === 'user' ? 'Пользователь' : 'Консультант'}: ${m.content}`)
+    .join('\n\n');
+  
+  const prompt = `На основе технического задания создай детальный промпт для Cursor AI, который поможет разработчику создать ИИ-помощника.
+
+БИЗНЕС:
+${businessData.productDescription}
+Команда: ${businessData.teamSize}
+KPI: ${businessData.kpis}
+
+ТЕХНИЧЕСКОЕ ЗАДАНИЕ:
+${technicalSpec}
+
+ДИАЛОГ:
+${messagesText}
+
+СОГЛАСОВАННЫЕ ДЕТАЛИ:
+- Используется LangGraph для построения агентов
+- Для интеграций используются MCP (Model Context Protocol) со всеми нужными системами
+- Платформа: Telegram
+
+Создай промпт для Cursor, который:
+1. Описывает архитектуру решения на основе ТЗ
+2. Указывает использование LangGraph для построения агентов
+3. Описывает интеграции через MCP
+4. Дает конкретные инструкции по реализации
+5. Включает структуру проекта, основные компоненты, API endpoints
+6. Описывает взаимодействие с Telegram
+7. Включает примеры кода и структуру данных
+
+Промпт должен быть ПОЛНЫМ и ДЕТАЛЬНЫМ, чтобы разработчик мог сразу начать работу.
+Формат: структурированный промпт на русском языке, готовый для использования в Cursor.`;
+
+  const response = await llm.invoke(prompt);
+  let content = response.content.toString();
+  
+  // НЕ ограничиваем размер промпта - он должен быть полным
   
   return content;
 }
@@ -830,24 +983,46 @@ ${isNewBottleneck
 - Сообщение должно быть КРАТКИМ (не более 400 символов)
 - Задавай только один конкретный вопрос`;
 
+  // Fallback сообщение
+  const fallbackContent = isNewBottleneck
+    ? 'Привет! Я помогу вам создать новую точку улучшения процесса. Расскажите, какой процесс вы хотите улучшить и в чем основная проблема?'
+    : 'Привет! Давайте вместе разберем текущий процесс и спроектируем улучшенный вариант. Расскажите, как сейчас работает процесс?';
+  
   try {
     console.log('Initializing dialog for bottleneck:', bottleneck.id, 'isNew:', isNewBottleneck);
-    const response = await llm.invoke(prompt);
-    let content = response.content?.toString().trim() || '';
     
-    console.log('LLM response length:', content.length, 'content preview:', content.substring(0, 100));
+    // Пытаемся получить ответ от LLM с таймаутом
+    let content = '';
+    try {
+      const response = await Promise.race([
+        llm.invoke(prompt),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('LLM timeout')), 30000)
+        )
+      ]) as any;
+      
+      content = response.content?.toString().trim() || '';
+      console.log('LLM response length:', content.length, 'content preview:', content.substring(0, 100));
+    } catch (llmError) {
+      console.error('LLM invocation error:', llmError);
+      content = '';
+    }
     
-    // Если ответ пустой, используем fallback сообщение
-    if (!content || content.length === 0) {
-      console.log('Using fallback message for new bottleneck');
-      content = isNewBottleneck
-        ? 'Привет! Я помогу вам создать новую точку улучшения процесса. Расскажите, какой процесс вы хотите улучшить и в чем основная проблема?'
-        : 'Привет! Давайте вместе разберем текущий процесс и спроектируем улучшенный вариант. Расскажите, как сейчас работает процесс?';
+    // Если ответ пустой или слишком короткий, используем fallback сообщение
+    if (!content || content.length < 10) {
+      console.log('Using fallback message - LLM response was empty or too short');
+      content = fallbackContent;
     }
     
     // Ограничиваем длину ответа до 400 символов
     if (content.length > 400) {
       content = content.substring(0, 397) + '...';
+    }
+    
+    // Убеждаемся, что content не пустой
+    if (!content || content.trim().length === 0) {
+      console.error('Content is still empty after all checks, using fallback');
+      content = fallbackContent;
     }
     
     const initialMessage: ChatMessage = {
@@ -858,7 +1033,7 @@ ${isNewBottleneck
       phase: 'clarifying',
     };
     
-    console.log('Created initial message:', initialMessage.content.substring(0, 50));
+    console.log('Created initial message with', content.length, 'characters:', content.substring(0, 50));
     
     const dialogState: DialogState = {
       bottleneckId: bottleneck.id,
@@ -870,6 +1045,7 @@ ${isNewBottleneck
       isComplete: false,
     };
     
+    console.log('Returning dialog state with', dialogState.messages.length, 'messages');
     return dialogState;
   } catch (error) {
     console.error('Error in initializeDialog:', error);

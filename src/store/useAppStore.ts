@@ -125,7 +125,10 @@ export const useAppStore = create<AppState & AppActions>()(
   }),
   
   // Действия для диалога
-  setDialogState: (dialogState) => set({ dialogState }),
+  setDialogState: (dialogState) => {
+    console.log('=== setDialogState called:', dialogState ? `bottleneckId: ${dialogState.bottleneckId}, messages: ${dialogState.messages.length}` : 'null');
+    set({ dialogState });
+  },
   
   setChatLoading: (isChatLoading) => set({ isChatLoading }),
   
@@ -158,21 +161,32 @@ export const useAppStore = create<AppState & AppActions>()(
   },
   
   navigateToBottlenecksList: () => {
+    // НЕ сбрасываем dialogState - сохраняем его для возможного возврата
     set({ 
       viewMode: 'bottlenecks_list',
       selectedBottleneck: null,
-      dialogState: null,
+      // dialogState остается в store
     });
   },
   
   navigateToBottleneckDetail: (bottleneckId: string) => {
     const bottleneck = get().bottlenecks.find(b => b.id === bottleneckId);
     if (bottleneck) {
+      const currentDialogState = get().dialogState;
+      // Если есть dialogState для этого bottleneck, сохраняем его
+      // Если нет, оставляем текущий dialogState (он может быть загружен из localStorage)
+      // Компонент сам проверит, подходит ли dialogState для этого bottleneck
+      const dialogState = currentDialogState?.bottleneckId === bottleneckId 
+        ? currentDialogState 
+        : currentDialogState; // Не сбрасываем - компонент проверит соответствие
+      
       set({ 
         viewMode: 'bottleneck_detail',
         selectedBottleneck: bottleneck,
-        dialogState: null,
+        dialogState: dialogState,
       });
+      
+      console.log('Navigated to bottleneck detail:', bottleneckId, 'dialogState:', dialogState ? `${dialogState.messages.length} messages` : 'null');
     }
   },
   
@@ -217,19 +231,42 @@ export const useAppStore = create<AppState & AppActions>()(
     }),
     {
       name: 'bottleneck-analyzer-storage',
-      partialize: (state) => ({
-        businessData: state.businessData,
-        bottlenecks: state.bottlenecks,
-        refinedBottlenecks: serializeMap(state.refinedBottlenecks),
-        multiAgentState: state.multiAgentState,
-        viewMode: state.viewMode,
-      }),
+      partialize: (state) => {
+        const partialized = {
+          businessData: state.businessData,
+          bottlenecks: state.bottlenecks,
+          refinedBottlenecks: serializeMap(state.refinedBottlenecks),
+          multiAgentState: state.multiAgentState,
+          viewMode: state.viewMode,
+          dialogState: state.dialogState, // Сохраняем dialogState для восстановления диалогов
+        };
+        console.log('=== Saving to localStorage:', {
+          hasDialogState: !!partialized.dialogState,
+          dialogStateBottleneckId: partialized.dialogState?.bottleneckId,
+          dialogStateMessagesCount: partialized.dialogState?.messages?.length || 0,
+        });
+        return partialized;
+      },
       onRehydrateStorage: () => (state) => {
         if (state) {
           // Восстанавливаем Map из сериализованных данных
           if (state.refinedBottlenecks && Array.isArray(state.refinedBottlenecks)) {
             state.refinedBottlenecks = deserializeMap(state.refinedBottlenecks as any);
           }
+          
+          // Логируем загрузку dialogState для отладки
+          if (state.dialogState) {
+            console.log('=== Dialog state loaded from localStorage:', {
+              bottleneckId: state.dialogState.bottleneckId,
+              messagesCount: state.dialogState.messages?.length || 0,
+              phase: state.dialogState.phase,
+              messages: state.dialogState.messages?.map(m => ({ role: m.role, content: m.content.substring(0, 50) })),
+            });
+          } else {
+            console.log('=== No dialog state in localStorage');
+          }
+        } else {
+          console.log('=== No state in localStorage');
         }
       },
     }

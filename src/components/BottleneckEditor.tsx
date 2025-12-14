@@ -162,6 +162,8 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
   const [isInitializingDialog, setIsInitializingDialog] = useState(false);
   const [currentBottleneck, setCurrentBottleneck] = useState<Bottleneck | undefined>(props?.bottleneck);
   const [dialogState, setLocalDialogState] = useState<DialogState | null>(null);
+  const justInitializedDialogRef = useRef(false);
+  const hasLoadedDialogRef = useRef<string>('');
 
   const businessData = props?.businessData || storeBusinessData || {
     productDescription: 'Не указано',
@@ -170,26 +172,63 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     kpis: 'Не указано',
   };
 
-  // Синхронизируем storeDialogState с localDialogState при обновлении store
+  // При монтировании компонента проверяем, есть ли dialogState в store для текущего bottleneck
   useEffect(() => {
-    if (!storeDialogState) return;
-    
     const targetBottleneck = props?.bottleneck || 
                             (editingId ? bottlenecks.find(b => b.id === editingId) : null);
     
-    if (targetBottleneck && storeDialogState.bottleneckId === targetBottleneck.id) {
-      setLocalDialogState(prevState => {
-        // Обновляем только если storeDialogState новее (больше сообщений)
-        if (!prevState || storeDialogState.messages.length > prevState.messages.length) {
-          return storeDialogState;
+    if (!targetBottleneck) return;
+    
+    // Проверяем localStorage напрямую (только в браузере)
+    if (typeof window !== 'undefined') {
+      try {
+        const storageKey = 'bottleneck-analyzer-storage';
+        const storedData = localStorage.getItem(storageKey);
+        if (storedData) {
+          const parsed = JSON.parse(storedData);
+          console.log('=== localStorage data:', {
+            hasDialogState: !!parsed.state?.dialogState,
+            dialogStateBottleneckId: parsed.state?.dialogState?.bottleneckId,
+            dialogStateMessagesCount: parsed.state?.dialogState?.messages?.length || 0,
+          });
+        } else {
+          console.log('=== No data in localStorage');
         }
-        return prevState;
-      });
+      } catch (e) {
+        console.error('Error reading localStorage:', e);
+      }
     }
-  }, [storeDialogState?.bottleneckId, storeDialogState?.messages.length]);
-  
-  // Загружаем существующий диалог при открытии точки улучшения (только при первой загрузке)
+    
+    // Проверяем store напрямую на случай, если storeDialogState еще не обновился
+    const currentStoreState = useAppStore.getState();
+    const dialogStateInStore = currentStoreState.dialogState;
+    
+    console.log('=== Mount check:', {
+      targetBottleneckId: targetBottleneck.id,
+      dialogStateInStore: dialogStateInStore ? `ID: ${dialogStateInStore.bottleneckId}, Messages: ${dialogStateInStore.messages.length}` : 'null',
+      currentLocalDialogState: dialogState ? `ID: ${dialogState.bottleneckId}, Messages: ${dialogState.messages.length}` : 'null',
+    });
+    
+    if (dialogStateInStore && dialogStateInStore.bottleneckId === targetBottleneck.id && dialogStateInStore.messages.length > 0) {
+      if (!dialogState || dialogState.bottleneckId !== targetBottleneck.id || dialogState.messages.length === 0) {
+        console.log('Mount: Loading dialog from store on mount:', dialogStateInStore.messages.length, 'messages');
+        setLocalDialogState(dialogStateInStore);
+      }
+    }
+  }, []); // Только при монтировании
+
+  // Единый useEffect для загрузки диалога при открытии bottleneck
   useEffect(() => {
+    // Пропускаем загрузку, если диалог инициализируется
+    if (isInitializingDialog || justInitializedDialogRef.current) {
+      if (justInitializedDialogRef.current) {
+        setTimeout(() => {
+          justInitializedDialogRef.current = false;
+        }, 500);
+      }
+      return;
+    }
+    
     const targetBottleneck = props?.bottleneck || 
                             (editingId ? bottlenecks.find(b => b.id === editingId) : null);
     
@@ -197,22 +236,44 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
       return;
     }
     
-    // Используем функциональное обновление, чтобы проверить текущее состояние
-    setLocalDialogState(prevState => {
-      // Если уже есть локальный dialogState для этого bottleneck, не перезаписываем
-      if (prevState && prevState.bottleneckId === targetBottleneck.id) {
-        return prevState;
-      }
-      
-      // Если есть storeDialogState для этого bottleneck, используем его
-      if (storeDialogState && storeDialogState.bottleneckId === targetBottleneck.id) {
-        return storeDialogState;
-      }
-      
-      // Нет существующего диалога - возвращаем null (будет создан по кнопке)
-      return null;
-    });
-  }, [props?.bottleneck?.id, editingId]);
+    // Проверяем, загружали ли мы уже диалог для этого bottleneck
+    const dialogKey = `${targetBottleneck.id}-${editingId || props?.bottleneck?.id}`;
+    if (hasLoadedDialogRef.current === dialogKey && dialogState && dialogState.bottleneckId === targetBottleneck.id) {
+      return; // Уже загружен
+    }
+    
+    console.log('=== Loading dialog for bottleneck:', targetBottleneck.id);
+    console.log('storeDialogState:', storeDialogState ? `ID: ${storeDialogState.bottleneckId}, Messages: ${storeDialogState.messages.length}` : 'null');
+    console.log('current localDialogState:', dialogState ? `ID: ${dialogState.bottleneckId}, Messages: ${dialogState.messages.length}` : 'null');
+    
+    // Если уже есть правильный локальный dialogState - не меняем его
+    if (dialogState && dialogState.bottleneckId === targetBottleneck.id && dialogState.messages.length > 0) {
+      console.log('✓ Already have correct local dialog state:', dialogState.messages.length, 'messages');
+      hasLoadedDialogRef.current = dialogKey;
+      return;
+    }
+    
+    // Если есть storeDialogState для этого bottleneck с сообщениями - загружаем его
+    if (storeDialogState && storeDialogState.bottleneckId === targetBottleneck.id && storeDialogState.messages.length > 0) {
+      console.log('✓ Loading dialog from store:', storeDialogState.messages.length, 'messages');
+      setLocalDialogState(storeDialogState);
+      hasLoadedDialogRef.current = dialogKey;
+      return;
+    }
+    
+    // Если storeDialogState для другого bottleneck - сбрасываем локальное
+    if (storeDialogState && storeDialogState.bottleneckId !== targetBottleneck.id) {
+      console.log('✗ Store dialog is for different bottleneck, clearing local state');
+      setLocalDialogState(null);
+      hasLoadedDialogRef.current = '';
+      return;
+    }
+    
+    // Нет диалога для этого bottleneck
+    console.log('✗ No dialog found for bottleneck:', targetBottleneck.id);
+    setLocalDialogState(null);
+    hasLoadedDialogRef.current = dialogKey;
+  }, [props?.bottleneck?.id, editingId, storeDialogState?.bottleneckId, storeDialogState?.messages.length, isInitializingDialog]);
 
   // Инициализация диалога
   const handleStartDialog = async (bottleneck: Bottleneck) => {
@@ -253,14 +314,48 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
       console.log('Setting dialog state:', newDialogState);
       console.log('Messages in dialog state:', newDialogState.messages?.length, newDialogState.messages);
       
+      // Проверяем, что есть хотя бы одно сообщение
+      if (!newDialogState.messages || newDialogState.messages.length === 0) {
+        console.error('Dialog state has no messages!', newDialogState);
+        throw new Error('Dialog state не содержит сообщений');
+      }
+      
+      // Проверяем, что первое сообщение от агента не пустое
+      const firstMessage = newDialogState.messages[0];
+      if (!firstMessage || !firstMessage.content || firstMessage.content.trim().length === 0) {
+        console.error('First message is empty!', firstMessage);
+        throw new Error('Первое сообщение от агента пустое');
+      }
+      
+      console.log('First message content:', firstMessage.content.substring(0, 100));
+      
+      // Устанавливаем флаг, что мы только что инициализировали диалог
+      justInitializedDialogRef.current = true;
+      
       // Устанавливаем состояние синхронно
       setLocalDialogState(newDialogState);
       setDialogState(newDialogState);
       
-      // Проверяем, что состояние установилось
+      console.log('Dialog state set, messages count:', newDialogState.messages.length);
+      
+      // Проверяем, что состояние установилось через небольшую задержку
       setTimeout(() => {
-        console.log('Dialog state after set:', dialogState);
-      }, 100);
+        console.log('Dialog state after set - checking...');
+        // Проверяем через callback, чтобы увидеть актуальное состояние
+        setLocalDialogState(currentState => {
+          if (currentState && currentState.messages.length > 0) {
+            console.log('Dialog state successfully set with', currentState.messages.length, 'messages');
+          } else {
+            console.error('Dialog state was reset or is empty!');
+            // Если состояние было сброшено, восстанавливаем его
+            if (newDialogState && newDialogState.messages.length > 0) {
+              console.log('Restoring dialog state...');
+              return newDialogState;
+            }
+          }
+          return currentState;
+        });
+      }, 200);
     } catch (err) {
       console.error('Error initializing dialog:', err);
       alert(`Ошибка при инициализации диалога: ${err instanceof Error ? err.message : 'Неизвестная ошибка'}`);
@@ -314,12 +409,20 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
       }
 
       const result = await response.json();
+      console.log('Chat response result:', {
+        hasUpdatedBottleneck: !!result.updatedBottleneck,
+        hasFieldSuggestions: !!result.fieldSuggestions,
+        fieldSuggestionsCount: result.fieldSuggestions?.length || 0,
+        updatedBottleneck: result.updatedBottleneck,
+      });
+      
       const updatedDialogState = result.updatedDialogState;
       setLocalDialogState(updatedDialogState);
       setDialogState(updatedDialogState);
 
       // Автоматически обновляем bottleneck, если есть обновления от агента
       if (result.updatedBottleneck && targetBottleneck) {
+        console.log('Updating bottleneck from API:', result.updatedBottleneck);
         // Если это новое улучшение (временный ID), создаем его в store
         if (isCreating && targetBottleneck.id.startsWith('temp_')) {
           const newBottleneck: Bottleneck = {
@@ -506,6 +609,21 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     ));
   };
 
+  // Удаление последних сообщений из диалога
+  const handleDeleteLastMessages = (count: number) => {
+    if (!dialogState || dialogState.messages.length === 0) return;
+    
+    const newMessages = dialogState.messages.slice(0, -count);
+    const updatedDialogState: DialogState = {
+      ...dialogState,
+      messages: newMessages,
+    };
+    
+    setLocalDialogState(updatedDialogState);
+    setDialogState(updatedDialogState); // Сохраняем в store
+    console.log('Deleted', count, 'messages, remaining:', newMessages.length);
+  };
+
   // Если передан bottleneck через props, работаем в режиме редактирования с split view
   if (props?.bottleneck || editingId || isCreating) {
     let targetBottleneck: Bottleneck | undefined = props?.bottleneck || 
@@ -534,31 +652,55 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
         <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 flex flex-col" style={{ flexBasis: '40%', minHeight: '300px', maxHeight: '50%' }}>
           <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0">
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex-1">
                 <h3 className="text-lg font-semibold text-gray-900">Диалог с консультантом</h3>
                 <p className="text-sm text-gray-600 mt-1">
                   Общайтесь с агентом, чтобы улучшить описание точки улучшения
                 </p>
               </div>
-              {!dialogState && targetBottleneck && (
+              <div className="flex items-center gap-2">
+                {!dialogState && targetBottleneck && (
+                  <button
+                    onClick={() => targetBottleneck && handleStartDialog(targetBottleneck)}
+                    disabled={isInitializingDialog}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isInitializingDialog ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Запуск...
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="w-4 h-4" />
+                        Начать диалог
+                      </>
+                    )}
+                  </button>
+                )}
                 <button
-                  onClick={() => targetBottleneck && handleStartDialog(targetBottleneck)}
-                  disabled={isInitializingDialog}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  onClick={() => {
+                    // Сохраняем dialogState в store перед переходом
+                    if (dialogState) {
+                      setDialogState(dialogState);
+                    }
+                    
+                    setIsCreating(false);
+                    setEditingId(null);
+                    setCurrentBottleneck(undefined);
+                    setLocalDialogState(null);
+                    // НЕ сбрасываем dialogState в store - он должен сохраниться
+                    setFieldSuggestions([]);
+                    setHasUnsavedChanges(false);
+                    navigateToBottlenecksList();
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+                  title="Вернуться к списку улучшений"
                 >
-                  {isInitializingDialog ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Запуск...
-                    </>
-                  ) : (
-                    <>
-                      <MessageCircle className="w-4 h-4" />
-                      Начать диалог
-                    </>
-                  )}
+                  <X className="w-4 h-4" />
+                  <span className="hidden sm:inline">К списку</span>
                 </button>
-              )}
+              </div>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 min-h-0">
@@ -568,6 +710,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
               onSendMessage={handleSendMessage}
               onStartDialog={() => targetBottleneck && handleStartDialog(targetBottleneck)}
               isInitializing={isInitializingDialog}
+              onDeleteLastMessages={handleDeleteLastMessages}
             />
           </div>
         </div>
@@ -629,10 +772,38 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
   const handleEdit = (bottleneckId: string) => {
     const bottleneck = bottlenecks.find(b => b.id === bottleneckId);
     if (bottleneck) {
+      console.log('=== handleEdit called for bottleneck:', bottleneckId);
       setEditingId(bottleneckId);
       setCurrentBottleneck(bottleneck);
       setFieldSuggestions([]);
-      // Существующий диалог загрузится автоматически через useEffect, если он есть
+      
+      // Принудительно загружаем диалог из store, если он есть
+      // Также проверяем через getState на случай, если storeDialogState еще не обновился
+      const currentStoreState = useAppStore.getState();
+      const dialogStateToLoad = storeDialogState || currentStoreState.dialogState;
+      
+      console.log('Checking dialog state:', {
+        storeDialogState: storeDialogState ? `${storeDialogState.bottleneckId} (${storeDialogState.messages.length} msgs)` : 'null',
+        currentStoreState: currentStoreState.dialogState ? `${currentStoreState.dialogState.bottleneckId} (${currentStoreState.dialogState.messages.length} msgs)` : 'null',
+        dialogStateToLoad: dialogStateToLoad ? `${dialogStateToLoad.bottleneckId} (${dialogStateToLoad.messages.length} msgs)` : 'null',
+      });
+      
+      if (dialogStateToLoad && dialogStateToLoad.bottleneckId === bottleneckId) {
+        if (dialogStateToLoad.messages.length > 0) {
+          console.log('✓ Loading existing dialog for bottleneck:', bottleneckId, 'with', dialogStateToLoad.messages.length, 'messages');
+          setLocalDialogState(dialogStateToLoad);
+          setDialogState(dialogStateToLoad);
+          hasLoadedDialogRef.current = `${bottleneckId}-${bottleneckId}`;
+        } else {
+          console.log('✗ Dialog state exists but has no messages for bottleneck:', bottleneckId);
+          setLocalDialogState(null);
+          hasLoadedDialogRef.current = '';
+        }
+      } else {
+        console.log('✗ No existing dialog found for bottleneck:', bottleneckId);
+        setLocalDialogState(null);
+        hasLoadedDialogRef.current = '';
+      }
     }
   };
 
