@@ -47,14 +47,7 @@ export function BottleneckForm({
 
   return (
     <div className="space-y-4">
-      {/* Показываем предложения для всех полей */}
-      {suggestions.length > 0 && (
-        <FieldSuggestions
-          suggestions={suggestions}
-          onApply={handleApplySuggestion}
-          onDismiss={onDismissSuggestion || (() => {})}
-        />
-      )}
+      {/* Предложения больше не показываются - они применяются автоматически */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -379,16 +372,73 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
         }
       }
 
-      // Обрабатываем предложения изменений
+      // Автоматически применяем предложения изменений (карточка read-only, пользователь не может редактировать вручную)
       if (result.fieldSuggestions && result.fieldSuggestions.length > 0) {
-        setFieldSuggestions(prev => {
-          // Фильтруем дубликаты по полю
-          const existingFields = new Set(prev.map(s => s.field));
-          const newSuggestions = result.fieldSuggestions.filter(
-            (s: FieldSuggestion) => !existingFields.has(s.field)
-          );
-          return [...prev, ...newSuggestions];
-        });
+        // Определяем актуальный bottleneck для обновления
+        let currentTargetBottleneck = targetBottleneck;
+        
+        // Если это новое улучшение и оно было только что создано, используем его
+        if (isCreating && currentBottleneck && currentBottleneck.id.startsWith('temp_')) {
+          currentTargetBottleneck = currentBottleneck;
+        } else if (editingId) {
+          currentTargetBottleneck = bottlenecks.find(b => b.id === editingId) || currentTargetBottleneck;
+        } else if (currentBottleneck) {
+          currentTargetBottleneck = currentBottleneck;
+        } else if (props?.bottleneck) {
+          currentTargetBottleneck = props.bottleneck;
+        }
+        
+        if (currentTargetBottleneck && !currentTargetBottleneck.id.startsWith('temp_')) {
+          // Собираем все изменения в один объект для одного обновления
+          const updates: Partial<Bottleneck> = {};
+          
+          result.fieldSuggestions.forEach((suggestion: FieldSuggestion) => {
+            try {
+              const field = suggestion.field;
+              let newValue: any = suggestion.suggestedValue;
+              
+              // Парсим JSON для массивов (хотя мы убрали эти поля, но на всякий случай)
+              if (field === 'suggestedAgents' || field === 'mcpToolsNeeded') {
+                try {
+                  newValue = JSON.parse(suggestion.suggestedValue);
+                } catch {
+                  newValue = suggestion.suggestedValue.split(',').map(s => s.trim()).filter(s => s);
+                }
+              }
+              
+              // Обрабатываем приоритет
+              if (field === 'priority') {
+                const validPriorities: Priority[] = ['high', 'medium', 'low'];
+                if (validPriorities.includes(newValue as Priority)) {
+                  newValue = newValue as Priority;
+                } else {
+                  console.warn('Invalid priority value:', newValue);
+                  return;
+                }
+              }
+              
+              updates[field] = newValue;
+            } catch (e) {
+              console.error('Error processing suggestion:', e);
+            }
+          });
+          
+          // Применяем все изменения одним обновлением
+          if (Object.keys(updates).length > 0) {
+            updateBottleneck(currentTargetBottleneck.id, updates);
+            
+            // Обновляем локальное состояние после небольшой задержки, чтобы store успел обновиться
+            setTimeout(() => {
+              const updated = bottlenecks.find(b => b.id === currentTargetBottleneck.id);
+              if (updated) {
+                setCurrentBottleneck(updated);
+              }
+            }, 100);
+          }
+        }
+        
+        // Не показываем предложения пользователю - они уже применены автоматически
+        setFieldSuggestions([]);
       }
     } catch (err) {
       console.error('Error sending message:', err);
