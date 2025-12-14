@@ -1,22 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { Bottleneck, Priority } from '@/types';
+import { Bottleneck, Priority, FieldSuggestion, BusinessData, DialogState } from '@/types';
 import { Plus, Trash2, Edit2, X, Save } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import ChatInterface from './ChatInterface';
+import FieldSuggestions from './FieldSuggestions';
 
 interface BottleneckEditorProps {
   bottleneck?: Bottleneck;
   onSave?: (bottleneck: Bottleneck) => void;
   onCancel?: () => void;
+  businessData?: BusinessData;
+  suggestions?: FieldSuggestion[];
+  onApplySuggestion?: (suggestion: FieldSuggestion) => void;
+  onDismissSuggestion?: (suggestion: FieldSuggestion) => void;
 }
 
-// Форма редактирования узкого места
+// Форма редактирования точки улучшения
 export function BottleneckForm({ 
   bottleneck, 
   onSave, 
-  onCancel 
+  onCancel,
+  suggestions = [],
+  onApplySuggestion,
+  onDismissSuggestion,
 }: BottleneckEditorProps) {
   const [formData, setFormData] = useState<Partial<Bottleneck>>({
     title: bottleneck?.title || '',
@@ -88,8 +97,59 @@ export function BottleneckForm({
     });
   };
 
+  // Обработка применения предложения
+  const handleApplySuggestion = (suggestion: FieldSuggestion) => {
+    try {
+      const field = suggestion.field;
+      let newValue: any = suggestion.suggestedValue;
+      
+      // Парсим JSON для массивов
+      if (field === 'suggestedAgents' || field === 'mcpToolsNeeded') {
+        try {
+          newValue = JSON.parse(suggestion.suggestedValue);
+        } catch {
+          // Если не JSON, используем как есть
+          newValue = suggestion.suggestedValue.split(',').map(s => s.trim()).filter(s => s);
+        }
+      }
+      
+      // Обрабатываем приоритет
+      if (field === 'priority') {
+        const validPriorities: Priority[] = ['high', 'medium', 'low'];
+        if (validPriorities.includes(newValue as Priority)) {
+          newValue = newValue as Priority;
+        } else {
+          console.warn('Invalid priority value:', newValue);
+          return;
+        }
+      }
+      
+      setFormData({
+        ...formData,
+        [field]: newValue,
+      });
+      
+      onApplySuggestion?.(suggestion);
+    } catch (e) {
+      console.error('Error applying suggestion:', e);
+    }
+  };
+
+  // Получаем предложения для конкретного поля
+  const getFieldSuggestions = (field: keyof Bottleneck) => {
+    return suggestions.filter(s => s.field === field);
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Показываем предложения для всех полей */}
+      {suggestions.length > 0 && (
+        <FieldSuggestions
+          suggestions={suggestions}
+          onApply={handleApplySuggestion}
+          onDismiss={onDismissSuggestion || (() => {})}
+        />
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -302,11 +362,12 @@ export function BottleneckForm({
   );
 }
 
-// Основной компонент редактора
+// Основной компонент редактора с split view
 interface BottleneckEditorMainProps {
   bottleneck?: Bottleneck;
   onSave?: (bottleneck: Bottleneck) => void;
   onCancel?: () => void;
+  businessData?: BusinessData;
 }
 
 export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
@@ -317,31 +378,263 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     updateBottleneck,
     deleteBottleneck,
     navigateToBottlenecksList,
+    businessData: storeBusinessData,
+    dialogState: storeDialogState,
+    setDialogState,
+    setChatLoading,
+    isChatLoading,
   } = useAppStore();
 
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [fieldSuggestions, setFieldSuggestions] = useState<FieldSuggestion[]>([]);
+  const [isInitializingDialog, setIsInitializingDialog] = useState(false);
+  const [currentBottleneck, setCurrentBottleneck] = useState<Bottleneck | undefined>(props?.bottleneck);
+  const [dialogState, setLocalDialogState] = useState<DialogState | null>(props?.bottleneck ? storeDialogState : null);
 
-  // Если передан bottleneck через props, работаем в режиме редактирования
-  if (props?.bottleneck) {
-    return (
-      <BottleneckForm
-        bottleneck={props.bottleneck}
-        onSave={props.onSave || ((b) => updateBottleneck(b.id, b))}
-        onCancel={props.onCancel}
-      />
-    );
-  }
+  const businessData = props?.businessData || storeBusinessData || {
+    productDescription: 'Не указано',
+    teamSize: 0,
+    workflows: 'Не указано',
+    kpis: 'Не указано',
+  };
 
-  const handleSave = (bottleneck: Bottleneck) => {
-    if (editingId) {
-      updateBottleneck(editingId, bottleneck);
-      setEditingId(null);
-    } else {
-      addBottleneck(bottleneck);
-      setIsCreating(false);
+  // Автоматически инициализируем диалог при создании/открытии точки улучшения
+  useEffect(() => {
+    if (!businessData) return;
+    
+    let targetBottleneck: Bottleneck | null = null;
+    
+    if (isCreating) {
+      // Для новой точки улучшения создаем временный объект
+      targetBottleneck = {
+        id: `temp_${uuidv4()}`,
+        title: '',
+        processArea: '',
+        problemDescription: '',
+        currentImpact: '',
+        priority: 'medium',
+        potentialGain: '',
+        asIsProcess: '',
+        toBeProcess: '',
+        suggestedAgents: [],
+        mcpToolsNeeded: [],
+      };
+    } else if (editingId) {
+      targetBottleneck = bottlenecks.find(b => b.id === editingId) || null;
+    } else if (currentBottleneck) {
+      targetBottleneck = currentBottleneck;
+    }
+    
+    if (targetBottleneck && !dialogState && !isInitializingDialog) {
+      handleStartDialog(targetBottleneck);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCreating, editingId, currentBottleneck?.id, businessData?.productDescription]);
+
+  // Инициализация диалога
+  const handleStartDialog = async (bottleneck: Bottleneck) => {
+    if (!businessData) return;
+
+    setIsInitializingDialog(true);
+    try {
+      const response = await fetch('/api/chat/init', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          businessData,
+          bottleneck,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to initialize dialog');
+      }
+
+      const result = await response.json();
+      const newDialogState = result.dialogState;
+      setLocalDialogState(newDialogState);
+      setDialogState(newDialogState);
+    } catch (err) {
+      console.error('Error initializing dialog:', err);
+    } finally {
+      setIsInitializingDialog(false);
     }
   };
+
+  // Отправка сообщения в диалог
+  const handleSendMessage = async (message: string) => {
+    let targetBottleneck: Bottleneck | null = null;
+    
+    if (isCreating) {
+      // Для новой точки улучшения используем временный объект
+      targetBottleneck = {
+        id: `temp_${uuidv4()}`,
+        title: '',
+        processArea: '',
+        problemDescription: '',
+        currentImpact: '',
+        priority: 'medium',
+        potentialGain: '',
+        asIsProcess: '',
+        toBeProcess: '',
+        suggestedAgents: [],
+        mcpToolsNeeded: [],
+      };
+    } else {
+      targetBottleneck = currentBottleneck || (editingId ? bottlenecks.find(b => b.id === editingId) || null : null);
+    }
+    
+    if (!targetBottleneck || !businessData || !dialogState) return;
+
+    setChatLoading(true);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          businessData,
+          bottleneck: targetBottleneck,
+          dialogState,
+          userMessage: message,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
+      const result = await response.json();
+      const updatedDialogState = result.updatedDialogState;
+      setLocalDialogState(updatedDialogState);
+      setDialogState(updatedDialogState);
+
+      // Обрабатываем предложения изменений
+      if (result.fieldSuggestions && result.fieldSuggestions.length > 0) {
+        setFieldSuggestions(prev => {
+          // Фильтруем дубликаты по полю
+          const existingFields = new Set(prev.map(s => s.field));
+          const newSuggestions = result.fieldSuggestions.filter(
+            (s: FieldSuggestion) => !existingFields.has(s.field)
+          );
+          return [...prev, ...newSuggestions];
+        });
+      }
+    } catch (err) {
+      console.error('Error sending message:', err);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // Применение предложения
+  const handleApplySuggestion = (suggestion: FieldSuggestion) => {
+    setFieldSuggestions(prev => prev.filter(s => 
+      !(s.field === suggestion.field && s.suggestedValue === suggestion.suggestedValue)
+    ));
+  };
+
+  // Отклонение предложения
+  const handleDismissSuggestion = (suggestion: FieldSuggestion) => {
+    setFieldSuggestions(prev => prev.filter(s => 
+      !(s.field === suggestion.field && s.suggestedValue === suggestion.suggestedValue)
+    ));
+  };
+
+  // Если передан bottleneck через props, работаем в режиме редактирования с split view
+  if (props?.bottleneck || editingId || isCreating) {
+    const targetBottleneck = props?.bottleneck || 
+                            (editingId ? bottlenecks.find(b => b.id === editingId) : null) ||
+                            undefined;
+
+    return (
+      <div className="h-full flex flex-col">
+        <div className="flex-1 flex overflow-hidden">
+          {/* Левая панель: Диалог с агентом */}
+          <div className="w-1/2 border-r border-gray-200 bg-gray-50 flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-gray-200 bg-white flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-900">Диалог с консультантом</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Общайтесь с агентом, чтобы улучшить описание точки улучшения
+              </p>
+            </div>
+            <div className="flex-1 overflow-hidden p-4">
+              <ChatInterface
+                dialogState={dialogState}
+                isLoading={isChatLoading}
+                onSendMessage={handleSendMessage}
+                onStartDialog={() => targetBottleneck && handleStartDialog(targetBottleneck)}
+                isInitializing={isInitializingDialog}
+              />
+            </div>
+          </div>
+
+          {/* Правая панель: Форма редактирования */}
+          <div className="w-1/2 bg-white flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {isCreating ? 'Создать новое улучшение процесса' : 'Редактировать улучшение процесса'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setIsCreating(false);
+                    setEditingId(null);
+                    setCurrentBottleneck(undefined);
+                    setLocalDialogState(null);
+                    setDialogState(null);
+                    setFieldSuggestions([]);
+                    props?.onCancel?.();
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-6">
+                <BottleneckForm
+                  bottleneck={targetBottleneck}
+                  onSave={(b) => {
+                    if (editingId) {
+                      updateBottleneck(editingId, b);
+                      setEditingId(null);
+                    } else {
+                      addBottleneck(b);
+                      setIsCreating(false);
+                    }
+                    props?.onSave?.(b);
+                    setCurrentBottleneck(undefined);
+                    setLocalDialogState(null);
+                    setDialogState(null);
+                    setFieldSuggestions([]);
+                  }}
+                  onCancel={() => {
+                    setIsCreating(false);
+                    setEditingId(null);
+                    setCurrentBottleneck(undefined);
+                    setLocalDialogState(null);
+                    setDialogState(null);
+                    setFieldSuggestions([]);
+                    props?.onCancel?.();
+                  }}
+                  businessData={businessData || undefined}
+                  suggestions={fieldSuggestions}
+                  onApplySuggestion={handleApplySuggestion}
+                  onDismissSuggestion={handleDismissSuggestion}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleDelete = (bottleneckId: string) => {
     if (confirm('Вы уверены, что хотите удалить это улучшение процесса?')) {
@@ -352,59 +645,30 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     }
   };
 
-  if (isCreating) {
-    return (
-      <div className="p-6 bg-white rounded-lg border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Создать новое улучшение процесса</h2>
-          <button
-            onClick={() => setIsCreating(false)}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <BottleneckForm
-          onSave={handleSave}
-          onCancel={() => setIsCreating(false)}
-        />
-      </div>
-    );
-  }
-
-  if (editingId) {
-    const bottleneck = bottlenecks.find(b => b.id === editingId);
-    if (!bottleneck) {
-      setEditingId(null);
-      return null;
+  const handleEdit = (bottleneckId: string) => {
+    const bottleneck = bottlenecks.find(b => b.id === bottleneckId);
+    if (bottleneck) {
+      setEditingId(bottleneckId);
+      setCurrentBottleneck(bottleneck);
+      setFieldSuggestions([]);
+      // Диалог будет инициализирован автоматически через useEffect
     }
+  };
 
-    return (
-      <div className="p-6 bg-white rounded-lg border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Редактировать улучшение процесса</h2>
-          <button
-            onClick={() => setEditingId(null)}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <BottleneckForm
-          bottleneck={bottleneck}
-          onSave={handleSave}
-          onCancel={() => setEditingId(null)}
-        />
-      </div>
-    );
-  }
+  const handleCreate = () => {
+    setIsCreating(true);
+    setCurrentBottleneck(undefined);
+    setFieldSuggestions([]);
+    setLocalDialogState(null);
+    setDialogState(null);
+  };
 
   return (
     <div className="space-y-4">
       {/* Кнопка создания */}
       <div className="flex justify-end">
         <button
-          onClick={() => setIsCreating(true)}
+          onClick={handleCreate}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <Plus className="w-4 h-4" />
@@ -412,7 +676,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
         </button>
       </div>
 
-      {/* Список узких мест с кнопками управления */}
+      {/* Список точек улучшения с кнопками управления */}
       <div className="space-y-2">
         {bottlenecks.map((bottleneck) => (
           <div
@@ -425,7 +689,7 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setEditingId(bottleneck.id)}
+                onClick={() => handleEdit(bottleneck.id)}
                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
                 title="Редактировать"
               >

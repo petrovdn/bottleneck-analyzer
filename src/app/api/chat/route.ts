@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
       message: result.message,
       updatedDialogState: result.updatedDialogState,
       refinedBottleneck: result.refinedBottleneck,
+      updatedBottleneck: result.updatedBottleneck,
+      fieldSuggestions: result.fieldSuggestions,
     };
 
     return NextResponse.json(response);
@@ -56,4 +58,5 @@ interface InitRequest {
 interface InitResponse {
   dialogState: DialogState;
 }
+
 

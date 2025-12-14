@@ -173,10 +173,20 @@ export interface ChatRequest {
   userMessage: string;
 }
 
+// Предложение изменения поля формы от агента
+export interface FieldSuggestion {
+  field: keyof Bottleneck;
+  currentValue: string;
+  suggestedValue: string;
+  reason: string; // Почему агент предлагает это изменение
+}
+
 export interface ChatResponse {
   message: ChatMessage;
   updatedDialogState: DialogState;
   refinedBottleneck?: RefinedBottleneck; // Если диалог завершен
+  updatedBottleneck?: Partial<Bottleneck>; // Обновления карточки в реальном времени
+  fieldSuggestions?: FieldSuggestion[]; // Предложения изменений полей
 }
 
 // API для мультиагентной системы

@@ -37,10 +37,10 @@ export default function DiscoveryForm({ onSubmit, isLoading }: DiscoveryFormProp
       <div className="max-w-3xl w-full bg-white rounded-2xl shadow-2xl p-8 md:p-12">
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold text-gray-900 mb-3">
-            Давайте определим ваш бизнес
+            Давайте проанализируем ваши процессы
           </h1>
           <p className="text-lg text-gray-600">
-            Расскажите о вашей компании, чтобы мы могли выявить узкие места
+            Расскажите об основных процессах в цепочке создания ценности
           </p>
         </div>
 
@@ -151,7 +151,7 @@ export default function DiscoveryForm({ onSubmit, isLoading }: DiscoveryFormProp
                 Анализируем ваш бизнес...
               </span>
             ) : (
-              'Далее: анализ узких мест'
+              'Далее: анализ точек улучшения'
             )}
           </button>
         </form>
@@ -159,4 +159,5 @@ export default function DiscoveryForm({ onSubmit, isLoading }: DiscoveryFormProp
     </div>
   );
 }
+
 

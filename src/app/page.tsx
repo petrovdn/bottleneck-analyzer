@@ -37,6 +37,7 @@ export default function Home() {
     setChatLoading,
     addRefinedBottleneck,
     getRefinedBottleneck,
+    updateBottleneck,
     setMultiAgentState,
     setMultiAgentLoading,
     navigateToMultiAgent,
@@ -59,6 +60,18 @@ export default function Home() {
       // Не выбираем автоматически, если пользователь явно на списке
     }
   }, [bottlenecks, selectedBottleneck, viewMode]);
+
+  // Автоматически создаем минимальный businessData при переходе к bottlenecks, если его нет
+  useEffect(() => {
+    if (stage === 'bottlenecks' && !businessData) {
+      setBusinessData({
+        productDescription: 'Не указано',
+        teamSize: 0,
+        workflows: 'Не указано',
+        kpis: 'Не указано',
+      });
+    }
+  }, [stage, businessData, setBusinessData]);
 
   const handleDiscoverySubmit = async (data: BusinessData) => {
     setBusinessData(data);
@@ -144,7 +157,7 @@ export default function Home() {
       // Обновляем состояние с ответом от сервера
       setMultiAgentState(result.multiAgentState);
 
-      // Если найдены узкие места, обновляем список
+      // Если найдены точки улучшения, обновляем список
       if (result.bottlenecks && result.bottlenecks.length > 0) {
         setBottlenecks(result.bottlenecks);
         if (!selectedBottleneck && result.bottlenecks.length > 0) {
@@ -267,6 +280,11 @@ export default function Home() {
       const result = await response.json();
       setDialogState(result.updatedDialogState);
 
+      // Обновляем карточку в реальном времени, если есть обновления
+      if (result.updatedBottleneck) {
+        updateBottleneck(selectedBottleneck.id, result.updatedBottleneck);
+      }
+
       // Если диалог завершен и есть уточненное решение
       if (result.refinedBottleneck) {
         addRefinedBottleneck(selectedBottleneck.id, result.refinedBottleneck);
@@ -290,6 +308,30 @@ export default function Home() {
       <>
         <Navigation />
         <div className="container mx-auto px-4 py-8">
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Анализ бизнес-процессов</h1>
+              <p className="text-gray-600">Заполните форму для начала анализа или перейдите к работе с узкими местами</p>
+            </div>
+            <button
+              onClick={() => {
+                // Создаем минимальный businessData для работы с точками улучшения
+                if (!businessData) {
+                  setBusinessData({
+                    productDescription: 'Не указано',
+                    teamSize: 0,
+                    workflows: 'Не указано',
+                    kpis: 'Не указано',
+                  });
+                }
+                setStage('bottlenecks');
+                navigateToBottlenecksList();
+              }}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+            >
+              Перейти к точкам улучшения
+            </button>
+          </div>
           <DiscoveryForm onSubmit={handleDiscoverySubmit} isLoading={isLoading} />
         </div>
         {error && (
@@ -334,7 +376,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Список узких мест */}
+          {/* Список точек улучшения */}
           {viewMode === 'bottlenecks_list' && (
             <div className="flex-1 overflow-y-auto p-6">
               <div className="max-w-6xl mx-auto">
@@ -347,7 +389,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Детали узкого места */}
+          {/* Детали точки улучшения */}
           {viewMode === 'bottleneck_detail' && selectedBottleneck && businessData && (
             <div className="flex-1 overflow-hidden">
               <BottleneckDetail

@@ -12,12 +12,14 @@ import {
 export default function Navigation() {
   const {
     viewMode,
+    stage,
     navigateToMultiAgent,
     navigateToBottlenecksList,
     navigateToBottleneckDetail,
     selectedBottleneck,
     bottlenecks,
     multiAgentState,
+    setStage,
   } = useAppStore();
 
   const hasBottlenecks = bottlenecks.length > 0;
@@ -54,19 +56,23 @@ export default function Navigation() {
               )}
             </button>
 
-            {/* Список узких мест */}
+            {/* Список точек улучшения */}
             <button
-              onClick={navigateToBottlenecksList}
+              onClick={() => {
+                if (stage === 'discovery') {
+                  setStage('bottlenecks');
+                }
+                navigateToBottlenecksList();
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === 'bottlenecks_list'
                   ? 'bg-blue-100 text-blue-700'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
-              disabled={!hasBottlenecks}
-              title="Перейти к списку узких мест"
+              title="Перейти к списку точек улучшения"
             >
               <List className="w-4 h-4" />
-              <span className="hidden sm:inline">Узкие места</span>
+              <span className="hidden sm:inline">Точки улучшения</span>
               {hasBottlenecks && (
                 <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-200 text-gray-700 rounded-full">
                   {bottlenecks.length}
@@ -74,7 +80,7 @@ export default function Navigation() {
               )}
             </button>
 
-            {/* Детали текущего узкого места */}
+            {/* Детали текущей точки улучшения */}
             {selectedBottleneck && (
               <>
                 <ChevronRight className="w-4 h-4 text-gray-400" />

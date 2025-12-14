@@ -48,11 +48,11 @@ const phaseConfig: Record<MultiAgentPhase, {
     description: 'Строим карту процессов',
   },
   bottleneck_analysis: {
-    label: 'Анализ узких мест',
+    label: 'Анализ точек улучшения',
     icon: <AlertTriangle className="w-4 h-4" />,
     color: 'text-amber-600',
     bgColor: 'bg-amber-100',
-    description: 'Ищем узкие места',
+    description: 'Ищем точки улучшения',
   },
   solution_design: {
     label: 'Проектирование решений',
@@ -266,7 +266,7 @@ function StartDialogButton({ onClick, isLoading }: { onClick: () => void; isLoad
           Мультиагентная система анализа
         </h3>
         <p className="text-gray-600 max-w-md">
-          Система из нескольких специализированных агентов поможет найти узкие места 
+          Система из нескольких специализированных агентов поможет найти точки улучшения 
           в вашей цепочке ценности и предложить решения.
         </p>
       </motion.div>

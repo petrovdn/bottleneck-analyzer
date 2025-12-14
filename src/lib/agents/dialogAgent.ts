@@ -6,9 +6,112 @@ import {
   DialogState, 
   ChatMessage, 
   DialogPhase,
-  RefinedBottleneck 
+  RefinedBottleneck,
+  FieldSuggestion
 } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
+
+// Извлечение предложений изменений полей из диалога
+async function extractFieldSuggestions(state: GraphState): Promise<FieldSuggestion[]> {
+  const llm = createLLM();
+  
+  // Извлекаем предложения только если есть достаточно диалога
+  if (state.messages.length < 2) {
+    return [];
+  }
+  
+  const messagesText = state.messages.map(m => 
+    m.role === 'user' ? `Пользователь: ${m.content}` : `Консультант: ${m.content}`
+  ).join('\n\n');
+  
+  const currentBottleneck = state.bottleneck;
+  
+  const prompt = `На основе диалога проанализируй, какие поля карточки точки улучшения можно улучшить или уточнить.
+
+ИСТОРИЯ ДИАЛОГА:
+${messagesText}
+
+Последний ответ консультанта: ${state.responseMessage}
+
+ТЕКУЩАЯ ФАЗА: ${state.dialogPhase}
+
+ТЕКУЩИЕ ЗНАЧЕНИЯ ПОЛЕЙ:
+- title: "${currentBottleneck.title}"
+- processArea: "${currentBottleneck.processArea}"
+- problemDescription: "${currentBottleneck.problemDescription}"
+- currentImpact: "${currentBottleneck.currentImpact}"
+- priority: "${currentBottleneck.priority}"
+- potentialGain: "${currentBottleneck.potentialGain}"
+- asIsProcess: "${currentBottleneck.asIsProcess}"
+- toBeProcess: "${currentBottleneck.toBeProcess}"
+- suggestedAgents: ${JSON.stringify(currentBottleneck.suggestedAgents)}
+- mcpToolsNeeded: ${JSON.stringify(currentBottleneck.mcpToolsNeeded)}
+
+ТВОЯ ЗАДАЧА:
+Проанализируй диалог и определи, для каких полей можно предложить улучшенные значения на основе информации из диалога.
+
+Для каждого поля, которое можно улучшить, верни:
+- field: название поля (title, processArea, problemDescription, currentImpact, priority, potentialGain, asIsProcess, toBeProcess, suggestedAgents, mcpToolsNeeded)
+- currentValue: текущее значение поля
+- suggestedValue: предлагаемое улучшенное значение
+- reason: краткое обоснование, почему это изменение улучшит карточку
+
+ВАЖНО:
+- Предлагай изменения только если в диалоге есть новая информация, которая улучшает поле
+- Для массивов (suggestedAgents, mcpToolsNeeded) возвращай JSON-массив строк
+- Для priority возвращай одно из значений: "high", "medium", "low"
+- Не предлагай изменения, если текущее значение уже хорошее или если нет новой информации
+
+Верни JSON массив предложений:
+[
+  {
+    "field": "название_поля",
+    "currentValue": "текущее значение",
+    "suggestedValue": "предлагаемое значение",
+    "reason": "обоснование изменения"
+  }
+]
+
+Если нет предложений, верни пустой массив [].`;
+
+  try {
+    const response = await llm.invoke(prompt);
+    const content = response.content.toString();
+    
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const suggestions = JSON.parse(jsonMatch[0]);
+      
+      // Валидация и фильтрация предложений
+      const validSuggestions: FieldSuggestion[] = suggestions
+        .filter((s: any) => {
+          // Проверяем, что поле существует в Bottleneck
+          const validFields: (keyof Bottleneck)[] = [
+            'title', 'processArea', 'problemDescription', 'currentImpact',
+            'priority', 'potentialGain', 'asIsProcess', 'toBeProcess',
+            'suggestedAgents', 'mcpToolsNeeded'
+          ];
+          return validFields.includes(s.field) && 
+                 s.currentValue !== undefined &&
+                 s.suggestedValue !== undefined &&
+                 s.reason !== undefined &&
+                 s.currentValue !== s.suggestedValue; // Не предлагать, если значение не изменилось
+        })
+        .map((s: any) => ({
+          field: s.field as keyof Bottleneck,
+          currentValue: typeof s.currentValue === 'string' ? s.currentValue : JSON.stringify(s.currentValue),
+          suggestedValue: typeof s.suggestedValue === 'string' ? s.suggestedValue : JSON.stringify(s.suggestedValue),
+          reason: s.reason,
+        }));
+      
+      return validSuggestions;
+    }
+  } catch (e) {
+    console.error('Error extracting field suggestions:', e);
+  }
+  
+  return [];
+}
 
 // Состояние для обработки диалога
 interface GraphState {
@@ -32,7 +135,7 @@ const PHASE_PROMPTS: Record<DialogPhase, string> = {
 ТВОЯ ЗАДАЧА:
 1. Детально выяснить, как процесс работает СЕЙЧАС
 2. Понять все шаги, участников, инструменты, временные рамки
-3. Выявить проблемы, узкие места, неэффективности
+3. Выявить проблемы, точки улучшения, неэффективности
 4. Понять контекст и ограничения
 
 СТИЛЬ ОБЩЕНИЯ:
@@ -299,6 +402,8 @@ export async function processDialogMessage(
   message: ChatMessage;
   updatedDialogState: DialogState;
   refinedBottleneck?: RefinedBottleneck;
+  updatedBottleneck?: Partial<Bottleneck>;
+  fieldSuggestions?: FieldSuggestion[];
 }> {
   
   // Конвертируем историю сообщений в простой формат
@@ -334,6 +439,9 @@ export async function processDialogMessage(
   // 3. Проверяем решение
   const solutionResult = await checkSolution(finalState);
   const completeState = { ...finalState, ...solutionResult };
+  
+  // 4. Извлекаем предложения изменений полей из диалога
+  const fieldSuggestions = await extractFieldSuggestions(completeState);
   
   // Создаем сообщение ответа
   const responseMessage: ChatMessage = {
@@ -400,6 +508,7 @@ export async function processDialogMessage(
     message: responseMessage,
     updatedDialogState,
     refinedBottleneck,
+    fieldSuggestions: fieldSuggestions.length > 0 ? fieldSuggestions : undefined,
   };
 }
 
