@@ -6,7 +6,8 @@ import {
   List, 
   FileText, 
   Home,
-  ChevronRight
+  ChevronRight,
+  LogOut
 } from 'lucide-react';
 
 export default function Navigation() {
@@ -115,6 +116,24 @@ export default function Navigation() {
                 </button>
               </>
             )}
+
+            {/* Кнопка выхода */}
+            <div className="ml-4 pl-4 border-l border-gray-300">
+              <button
+                onClick={() => {
+                  if (confirm('Вы уверены, что хотите выйти?')) {
+                    localStorage.removeItem('isAuthenticated');
+                    localStorage.removeItem('authTimestamp');
+                    window.location.reload();
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-gray-600 hover:bg-gray-100 hover:text-red-600"
+                title="Выйти из системы"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Выход</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

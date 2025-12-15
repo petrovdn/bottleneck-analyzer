@@ -9,9 +9,20 @@ import PromptDisplay from '@/components/PromptDisplay';
 import MultiAgentChat from '@/components/MultiAgentChat';
 import Navigation from '@/components/Navigation';
 import BottleneckEditor from '@/components/BottleneckEditor';
+import LoginForm from '@/components/LoginForm';
 import { BusinessData } from '@/types';
 
 export default function Home() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  // Проверяем авторизацию при монтировании
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const authStatus = localStorage.getItem('isAuthenticated');
+      setIsAuthenticated(authStatus === 'true');
+    }
+  }, []);
+
   const {
     stage,
     businessData,
@@ -72,6 +83,19 @@ export default function Home() {
       });
     }
   }, [stage, businessData, setBusinessData]);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  // Показываем форму авторизации, если не авторизован (после ВСЕХ хуков!)
+  if (isAuthenticated === null) {
+    return null; // Показываем пустой экран во время проверки
+  }
+
+  if (!isAuthenticated) {
+    return <LoginForm onLogin={handleLogin} />;
+  }
 
   const handleDiscoverySubmit = async (data: BusinessData) => {
     setBusinessData(data);
