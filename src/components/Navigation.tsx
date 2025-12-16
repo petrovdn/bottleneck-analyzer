@@ -7,8 +7,13 @@ import {
   FileText, 
   Home,
   ChevronRight,
-  LogOut
+  LogOut,
+  Database,
+  Download,
+  Upload,
+  ChevronDown
 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function Navigation() {
   const {
@@ -23,10 +28,27 @@ export default function Navigation() {
     setStage,
     hasUnsavedChanges,
     setHasUnsavedChanges,
+    setViewMode,
   } = useAppStore();
 
+  const [showDataMenu, setShowDataMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const hasBottlenecks = bottlenecks.length > 0;
   const hasMultiAgentState = multiAgentState !== null;
+
+  // Закрываем меню при клике вне его
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowDataMenu(false);
+      }
+    };
+
+    if (showDataMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showDataMenu]);
 
   return (
     <nav className="bg-white border-b border-gray-200 shadow-sm">
@@ -117,8 +139,40 @@ export default function Navigation() {
               </>
             )}
 
+            {/* Меню "Данные" */}
+            <div className="ml-4 pl-4 border-l border-gray-300 relative" ref={menuRef}>
+              <button
+                onClick={() => setShowDataMenu(!showDataMenu)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  viewMode === 'data_management'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                title="Управление данными"
+              >
+                <Database className="w-4 h-4" />
+                <span className="hidden sm:inline">Данные</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showDataMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showDataMenu && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                  <button
+                    onClick={() => {
+                      setViewMode('data_management');
+                      setShowDataMenu(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <Database className="w-4 h-4 text-gray-500" />
+                    <span>Управление данными</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Кнопка выхода */}
-            <div className="ml-4 pl-4 border-l border-gray-300">
+            <div className="ml-2 pl-2 border-l border-gray-300">
               <button
                 onClick={() => {
                   if (confirm('Вы уверены, что хотите выйти?')) {

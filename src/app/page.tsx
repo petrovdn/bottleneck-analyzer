@@ -10,6 +10,7 @@ import MultiAgentChat from '@/components/MultiAgentChat';
 import Navigation from '@/components/Navigation';
 import BottleneckEditor from '@/components/BottleneckEditor';
 import LoginForm from '@/components/LoginForm';
+import DataManagement from '@/components/DataManagement';
 import { BusinessData } from '@/types';
 
 export default function Home() {
@@ -326,6 +327,20 @@ export default function Home() {
     ? getRefinedBottleneck(selectedBottleneck.id) 
     : undefined;
 
+  // Страница управления данными доступна всегда
+  if (viewMode === 'data_management') {
+    return (
+      <>
+        <Navigation />
+        <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            <DataManagement />
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // Экран 1: Discovery
   if (stage === 'discovery') {
     return (
@@ -413,7 +428,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Детали точки улучшения */}
           {viewMode === 'bottleneck_detail' && selectedBottleneck && businessData && (
             <div className="flex-1 overflow-hidden">
               <BottleneckDetail

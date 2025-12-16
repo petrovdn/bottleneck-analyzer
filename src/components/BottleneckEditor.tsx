@@ -3,10 +3,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { Bottleneck, Priority, FieldSuggestion, BusinessData, DialogState } from '@/types';
-import { Plus, Trash2, Edit2, X, Save, Loader2, MessageCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Loader2, MessageCircle, Download, Upload } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import ChatInterface from './ChatInterface';
 import FieldSuggestions from './FieldSuggestions';
+import ImportDialog from './ImportDialog';
+import {
+  exportSingleBottleneck,
+  importSingleBottleneck,
+  downloadJSON,
+  readJSONFile,
+  generateSingleBottleneckFilename,
+} from '@/lib/utils/exportImport';
 
 interface BottleneckEditorProps {
   bottleneck?: Bottleneck;
@@ -154,6 +162,9 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     isChatLoading,
     setHasUnsavedChanges,
     hasUnsavedChanges,
+    getRefinedBottleneck,
+    importSingleBottleneck: importSingleBottleneckToStore,
+    getDialogState,
   } = useAppStore();
 
   const [isCreating, setIsCreating] = useState(false);
@@ -162,6 +173,9 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
   const [isInitializingDialog, setIsInitializingDialog] = useState(false);
   const [currentBottleneck, setCurrentBottleneck] = useState<Bottleneck | undefined>(props?.bottleneck);
   const [dialogState, setLocalDialogState] = useState<DialogState | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [pendingImportData, setPendingImportData] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const justInitializedDialogRef = useRef(false);
   const hasLoadedDialogRef = useRef<string>('');
 
@@ -199,20 +213,23 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
       }
     }
     
-    // Проверяем store напрямую на случай, если storeDialogState еще не обновился
-    const currentStoreState = useAppStore.getState();
-    const dialogStateInStore = currentStoreState.dialogState;
+    // Загружаем диалог из Map всех диалогов
+    const savedDialogState = getDialogState(targetBottleneck.id);
+    const currentDialogState = storeDialogState?.bottleneckId === targetBottleneck.id ? storeDialogState : null;
+    const dialogStateToLoad = savedDialogState || currentDialogState;
     
     console.log('=== Mount check:', {
       targetBottleneckId: targetBottleneck.id,
-      dialogStateInStore: dialogStateInStore ? `ID: ${dialogStateInStore.bottleneckId}, Messages: ${dialogStateInStore.messages.length}` : 'null',
+      savedDialogState: savedDialogState ? `ID: ${savedDialogState.bottleneckId}, Messages: ${savedDialogState.messages.length}` : 'null',
+      currentDialogState: currentDialogState ? `ID: ${currentDialogState.bottleneckId}, Messages: ${currentDialogState.messages.length}` : 'null',
       currentLocalDialogState: dialogState ? `ID: ${dialogState.bottleneckId}, Messages: ${dialogState.messages.length}` : 'null',
     });
     
-    if (dialogStateInStore && dialogStateInStore.bottleneckId === targetBottleneck.id && dialogStateInStore.messages.length > 0) {
+    if (dialogStateToLoad && dialogStateToLoad.messages.length > 0) {
       if (!dialogState || dialogState.bottleneckId !== targetBottleneck.id || dialogState.messages.length === 0) {
-        console.log('Mount: Loading dialog from store on mount:', dialogStateInStore.messages.length, 'messages');
-        setLocalDialogState(dialogStateInStore);
+        console.log('Mount: Loading dialog from store on mount:', dialogStateToLoad.messages.length, 'messages');
+        setLocalDialogState(dialogStateToLoad);
+        setDialogState(dialogStateToLoad); // Это также сохранит диалог в Map
       }
     }
   }, []); // Только при монтировании
@@ -243,8 +260,6 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     }
     
     console.log('=== Loading dialog for bottleneck:', targetBottleneck.id);
-    console.log('storeDialogState:', storeDialogState ? `ID: ${storeDialogState.bottleneckId}, Messages: ${storeDialogState.messages.length}` : 'null');
-    console.log('current localDialogState:', dialogState ? `ID: ${dialogState.bottleneckId}, Messages: ${dialogState.messages.length}` : 'null');
     
     // Если уже есть правильный локальный dialogState - не меняем его
     if (dialogState && dialogState.bottleneckId === targetBottleneck.id && dialogState.messages.length > 0) {
@@ -253,19 +268,16 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
       return;
     }
     
-    // Если есть storeDialogState для этого bottleneck с сообщениями - загружаем его
-    if (storeDialogState && storeDialogState.bottleneckId === targetBottleneck.id && storeDialogState.messages.length > 0) {
-      console.log('✓ Loading dialog from store:', storeDialogState.messages.length, 'messages');
-      setLocalDialogState(storeDialogState);
-      hasLoadedDialogRef.current = dialogKey;
-      return;
-    }
+    // Загружаем диалог из Map всех диалогов
+    const savedDialogState = getDialogState(targetBottleneck.id);
+    const currentDialogState = storeDialogState?.bottleneckId === targetBottleneck.id ? storeDialogState : null;
+    const dialogStateToLoad = savedDialogState || currentDialogState;
     
-    // Если storeDialogState для другого bottleneck - сбрасываем локальное
-    if (storeDialogState && storeDialogState.bottleneckId !== targetBottleneck.id) {
-      console.log('✗ Store dialog is for different bottleneck, clearing local state');
-      setLocalDialogState(null);
-      hasLoadedDialogRef.current = '';
+    if (dialogStateToLoad && dialogStateToLoad.messages.length > 0) {
+      console.log('✓ Loading dialog from store:', dialogStateToLoad.messages.length, 'messages');
+      setLocalDialogState(dialogStateToLoad);
+      setDialogState(dialogStateToLoad); // Это также сохранит диалог в Map
+      hasLoadedDialogRef.current = dialogKey;
       return;
     }
     
@@ -624,6 +636,73 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
     console.log('Deleted', count, 'messages, remaining:', newMessages.length);
   };
 
+  // Экспорт одной точки улучшения
+  const handleExport = () => {
+    const targetBottleneck = props?.bottleneck || 
+                            (editingId ? bottlenecks.find(b => b.id === editingId) : null) ||
+                            currentBottleneck;
+    if (!targetBottleneck) return;
+
+    const refinedBottleneck = getRefinedBottleneck(targetBottleneck.id);
+    const exportData = exportSingleBottleneck(
+      targetBottleneck,
+      dialogState,
+      refinedBottleneck || null
+    );
+    const filename = generateSingleBottleneckFilename(targetBottleneck);
+    downloadJSON(exportData, filename);
+  };
+
+  // Импорт одной точки улучшения
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const jsonData = await readJSONFile(file);
+      setPendingImportData(jsonData);
+      setShowImportDialog(true);
+    } catch (error: any) {
+      alert(`Ошибка при чтении файла: ${error.message}`);
+    }
+
+    // Сбрасываем input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImportConfirm = (mode: 'replace' | 'merge') => {
+    if (!pendingImportData) return;
+
+    try {
+      const importData = importSingleBottleneck(pendingImportData);
+      importSingleBottleneckToStore(importData, mode);
+      
+      // Если режим replace, переключаемся на импортированную точку
+      if (mode === 'replace') {
+        setEditingId(importData.bottleneck.id);
+        setCurrentBottleneck(importData.bottleneck);
+        if (importData.dialogState) {
+          setLocalDialogState(importData.dialogState);
+          setDialogState(importData.dialogState);
+        }
+      }
+      
+      setShowImportDialog(false);
+      setPendingImportData(null);
+      alert('Данные успешно импортированы');
+    } catch (error: any) {
+      alert(`Ошибка при импорте: ${error.message}`);
+      setShowImportDialog(false);
+      setPendingImportData(null);
+    }
+  };
+
   // Если передан bottleneck через props, работаем в режиме редактирования с split view
   if (props?.bottleneck || editingId || isCreating) {
     let targetBottleneck: Bottleneck | undefined = props?.bottleneck || 
@@ -677,6 +756,33 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
                       </>
                     )}
                   </button>
+                )}
+                {targetBottleneck && (
+                  <>
+                    <button
+                      onClick={handleExport}
+                      className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-2"
+                      title="Экспортировать точку улучшения"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span className="hidden sm:inline">Экспорт</span>
+                    </button>
+                    <button
+                      onClick={handleImportClick}
+                      className="px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-2"
+                      title="Импортировать точку улучшения"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span className="hidden sm:inline">Импорт</span>
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </>
                 )}
                 <button
                   onClick={() => {
@@ -756,6 +862,17 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
             </div>
           </div>
         </div>
+
+        {/* Диалог импорта */}
+        <ImportDialog
+          isOpen={showImportDialog}
+          onClose={() => {
+            setShowImportDialog(false);
+            setPendingImportData(null);
+          }}
+          onConfirm={handleImportConfirm}
+          importType="single"
+        />
       </div>
     );
   }
@@ -777,28 +894,23 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
       setCurrentBottleneck(bottleneck);
       setFieldSuggestions([]);
       
-      // Принудительно загружаем диалог из store, если он есть
-      // Также проверяем через getState на случай, если storeDialogState еще не обновился
-      const currentStoreState = useAppStore.getState();
-      const dialogStateToLoad = storeDialogState || currentStoreState.dialogState;
+      // Загружаем диалог из Map всех диалогов
+      const savedDialogState = getDialogState(bottleneckId);
+      // Также проверяем текущий dialogState, если он для этой точки
+      const currentDialogState = storeDialogState?.bottleneckId === bottleneckId ? storeDialogState : null;
+      const dialogStateToLoad = savedDialogState || currentDialogState;
       
       console.log('Checking dialog state:', {
-        storeDialogState: storeDialogState ? `${storeDialogState.bottleneckId} (${storeDialogState.messages.length} msgs)` : 'null',
-        currentStoreState: currentStoreState.dialogState ? `${currentStoreState.dialogState.bottleneckId} (${currentStoreState.dialogState.messages.length} msgs)` : 'null',
+        savedDialogState: savedDialogState ? `${savedDialogState.bottleneckId} (${savedDialogState.messages.length} msgs)` : 'null',
+        currentDialogState: currentDialogState ? `${currentDialogState.bottleneckId} (${currentDialogState.messages.length} msgs)` : 'null',
         dialogStateToLoad: dialogStateToLoad ? `${dialogStateToLoad.bottleneckId} (${dialogStateToLoad.messages.length} msgs)` : 'null',
       });
       
-      if (dialogStateToLoad && dialogStateToLoad.bottleneckId === bottleneckId) {
-        if (dialogStateToLoad.messages.length > 0) {
-          console.log('✓ Loading existing dialog for bottleneck:', bottleneckId, 'with', dialogStateToLoad.messages.length, 'messages');
-          setLocalDialogState(dialogStateToLoad);
-          setDialogState(dialogStateToLoad);
-          hasLoadedDialogRef.current = `${bottleneckId}-${bottleneckId}`;
-        } else {
-          console.log('✗ Dialog state exists but has no messages for bottleneck:', bottleneckId);
-          setLocalDialogState(null);
-          hasLoadedDialogRef.current = '';
-        }
+      if (dialogStateToLoad && dialogStateToLoad.messages.length > 0) {
+        console.log('✓ Loading existing dialog for bottleneck:', bottleneckId, 'with', dialogStateToLoad.messages.length, 'messages');
+        setLocalDialogState(dialogStateToLoad);
+        setDialogState(dialogStateToLoad); // Это также сохранит диалог в Map
+        hasLoadedDialogRef.current = `${bottleneckId}-${bottleneckId}`;
       } else {
         console.log('✗ No existing dialog found for bottleneck:', bottleneckId);
         setLocalDialogState(null);
@@ -858,6 +970,17 @@ export default function BottleneckEditor(props?: BottleneckEditorMainProps) {
           </div>
         ))}
       </div>
+
+      {/* Диалог импорта */}
+      <ImportDialog
+        isOpen={showImportDialog}
+        onClose={() => {
+          setShowImportDialog(false);
+          setPendingImportData(null);
+        }}
+        onConfirm={handleImportConfirm}
+        importType="single"
+      />
     </div>
   );
 }

@@ -7,7 +7,9 @@ import {
   DialogState,
   RefinedBottleneck,
   MultiAgentState,
-  ViewMode
+  ViewMode,
+  SingleBottleneckExport,
+  FullExport
 } from '@/types';
 
 interface AppState {
@@ -19,7 +21,8 @@ interface AppState {
   generatedPrompt: string;
   isLoading: boolean;
   error: string | null;
-  dialogState: DialogState | null;
+  dialogState: DialogState | null; // Текущий активный диалог (для обратной совместимости)
+  dialogStates: Map<string, DialogState>; // Все диалоги по ID точек улучшения
   isChatLoading: boolean;
   multiAgentState: MultiAgentState | null;
   isMultiAgentLoading: boolean;
@@ -44,13 +47,15 @@ interface AppActions {
   addRefinedBottleneck: (bottleneckId: string, refined: RefinedBottleneck) => void;
   getRefinedBottleneck: (bottleneckId: string) => RefinedBottleneck | undefined;
   clearDialogState: () => void;
+  getDialogState: (bottleneckId: string) => DialogState | undefined;
+  saveDialogState: (bottleneckId: string, dialogState: DialogState) => void;
   
   // Действия для мультиагентной системы
   setMultiAgentState: (state: MultiAgentState | null) => void;
   setMultiAgentLoading: (isLoading: boolean) => void;
   
   // Навигация
-  setViewMode: (mode: "multi_agent_dialog" | "bottlenecks_list" | "bottleneck_detail") => void;
+  setViewMode: (mode: ViewMode) => void;
   navigateToMultiAgent: () => void;
   navigateToBottlenecksList: () => void;
   navigateToBottleneckDetail: (bottleneckId: string) => void;
@@ -66,6 +71,10 @@ interface AppActions {
   
   // Управление несохраненными изменениями
   setHasUnsavedChanges: (hasChanges: boolean) => void;
+  
+  // Импорт данных
+  importSingleBottleneck: (data: SingleBottleneckExport, mode: 'replace' | 'merge') => void;
+  importFullData: (data: FullExport, mode: 'replace' | 'merge') => void;
 }
 
 const initialState: AppState = {
@@ -78,6 +87,7 @@ const initialState: AppState = {
   isLoading: false,
   error: null,
   dialogState: null,
+  dialogStates: new Map(),
   isChatLoading: false,
   multiAgentState: null,
   isMultiAgentLoading: false,
@@ -127,7 +137,24 @@ export const useAppStore = create<AppState & AppActions>()(
   // Действия для диалога
   setDialogState: (dialogState) => {
     console.log('=== setDialogState called:', dialogState ? `bottleneckId: ${dialogState.bottleneckId}, messages: ${dialogState.messages.length}` : 'null');
-    set({ dialogState });
+    if (dialogState) {
+      // Сохраняем диалог в Map всех диалогов
+      const dialogStates = new Map(get().dialogStates);
+      dialogStates.set(dialogState.bottleneckId, dialogState);
+      set({ dialogState, dialogStates });
+    } else {
+      set({ dialogState: null });
+    }
+  },
+  
+  getDialogState: (bottleneckId: string) => {
+    return get().dialogStates.get(bottleneckId);
+  },
+  
+  saveDialogState: (bottleneckId: string, dialogState: DialogState) => {
+    const dialogStates = new Map(get().dialogStates);
+    dialogStates.set(bottleneckId, dialogState);
+    set({ dialogStates, dialogState }); // Также обновляем текущий dialogState
   },
   
   setChatLoading: (isChatLoading) => set({ isChatLoading }),
@@ -228,6 +255,118 @@ export const useAppStore = create<AppState & AppActions>()(
   
   // Управление несохраненными изменениями
   setHasUnsavedChanges: (hasChanges: boolean) => set({ hasUnsavedChanges: hasChanges }),
+  
+  // Импорт данных
+  importSingleBottleneck: (data: SingleBottleneckExport, mode: 'replace' | 'merge') => {
+    const state = get();
+    
+    if (mode === 'replace') {
+      // Заменяем точку улучшения, если она существует
+      const existingIndex = state.bottlenecks.findIndex(b => b.id === data.bottleneck.id);
+      if (existingIndex >= 0) {
+        const bottlenecks = [...state.bottlenecks];
+        bottlenecks[existingIndex] = data.bottleneck;
+        set({ bottlenecks });
+      } else {
+        // Добавляем новую точку
+        set({ bottlenecks: [...state.bottlenecks, data.bottleneck] });
+      }
+      
+      // Устанавливаем dialogState
+      if (data.dialogState) {
+        set({ dialogState: data.dialogState });
+      }
+      
+      // Добавляем refinedBottleneck, если есть
+      if (data.refinedBottleneck) {
+        const refinedMap = new Map(state.refinedBottlenecks);
+        refinedMap.set(data.bottleneck.id, data.refinedBottleneck);
+        set({ refinedBottlenecks: refinedMap });
+      }
+      
+      // Выбираем эту точку
+      set({ selectedBottleneck: data.bottleneck });
+    } else {
+      // Merge режим: проверяем конфликты
+      const existingBottleneck = state.bottlenecks.find(b => b.id === data.bottleneck.id);
+      if (existingBottleneck) {
+        // Если точка существует, спрашиваем пользователя (это будет обработано в компоненте)
+        // Пока просто заменяем
+        const bottlenecks = state.bottlenecks.map(b => 
+          b.id === data.bottleneck.id ? data.bottleneck : b
+        );
+        set({ bottlenecks });
+      } else {
+        // Добавляем новую точку
+        set({ bottlenecks: [...state.bottlenecks, data.bottleneck] });
+      }
+      
+      // Объединяем dialogState
+      if (data.dialogState) {
+        set({ dialogState: data.dialogState });
+      }
+      
+      // Объединяем refinedBottleneck
+      if (data.refinedBottleneck) {
+        const refinedMap = new Map(state.refinedBottlenecks);
+        refinedMap.set(data.bottleneck.id, data.refinedBottleneck);
+        set({ refinedBottlenecks: refinedMap });
+      }
+    }
+    
+    get().saveState();
+  },
+  
+  importFullData: (data: FullExport, mode: 'replace' | 'merge') => {
+    if (mode === 'replace') {
+      // Полная замена всех данных
+      // Восстанавливаем все dialogStates из импортированных данных
+      const dialogStatesMap = new Map(Object.entries(data.dialogStates));
+      set({
+        businessData: data.businessData,
+        multiAgentState: data.multiAgentState,
+        bottlenecks: data.bottlenecks,
+        refinedBottlenecks: new Map(Object.entries(data.refinedBottlenecks)),
+        dialogStates: dialogStatesMap,
+        dialogState: null, // Текущий диалог будет установлен при открытии точки
+        selectedBottleneck: null,
+      });
+    } else {
+      // Merge режим: объединяем данные
+      const state = get();
+      
+      // Объединяем businessData (приоритет новым данным)
+      if (data.businessData) {
+        set({ businessData: data.businessData });
+      }
+      
+      // Объединяем multiAgentState (приоритет новым данным)
+      if (data.multiAgentState) {
+        set({ multiAgentState: data.multiAgentState });
+      }
+      
+      // Объединяем bottlenecks (проверяем конфликты по ID)
+      const existingIds = new Set(state.bottlenecks.map(b => b.id));
+      const newBottlenecks = data.bottlenecks.filter(b => !existingIds.has(b.id));
+      set({ bottlenecks: [...state.bottlenecks, ...newBottlenecks] });
+      
+      // Объединяем refinedBottlenecks
+      const refinedMap = new Map(state.refinedBottlenecks);
+      Object.entries(data.refinedBottlenecks).forEach(([id, refined]) => {
+        refinedMap.set(id, refined);
+      });
+      set({ refinedBottlenecks: refinedMap });
+      
+      // Объединяем dialogStates
+      const dialogStatesMap = new Map(state.dialogStates);
+      Object.entries(data.dialogStates).forEach(([bottleneckId, dialogState]) => {
+        dialogStatesMap.set(bottleneckId, dialogState);
+      });
+      set({ dialogStates: dialogStatesMap });
+    }
+    
+    get().saveState();
+  },
     }),
     {
       name: 'bottleneck-analyzer-storage',
@@ -238,12 +377,14 @@ export const useAppStore = create<AppState & AppActions>()(
           refinedBottlenecks: serializeMap(state.refinedBottlenecks),
           multiAgentState: state.multiAgentState,
           viewMode: state.viewMode,
-          dialogState: state.dialogState, // Сохраняем dialogState для восстановления диалогов
+          dialogState: state.dialogState, // Текущий активный диалог (для обратной совместимости)
+          dialogStates: serializeMap(state.dialogStates), // Все диалоги
         };
         console.log('=== Saving to localStorage:', {
           hasDialogState: !!partialized.dialogState,
           dialogStateBottleneckId: partialized.dialogState?.bottleneckId,
           dialogStateMessagesCount: partialized.dialogState?.messages?.length || 0,
+          dialogStatesCount: state.dialogStates.size,
         });
         return partialized;
       },
@@ -254,17 +395,30 @@ export const useAppStore = create<AppState & AppActions>()(
             state.refinedBottlenecks = deserializeMap(state.refinedBottlenecks as any);
           }
           
+          // Восстанавливаем dialogStates Map
+          if (state.dialogStates && Array.isArray(state.dialogStates)) {
+            state.dialogStates = deserializeMap(state.dialogStates as any);
+          } else if (!state.dialogStates) {
+            // Если dialogStates нет, создаем пустой Map
+            state.dialogStates = new Map();
+            // Если есть старый dialogState, добавляем его в Map
+            if (state.dialogState) {
+              state.dialogStates.set(state.dialogState.bottleneckId, state.dialogState);
+            }
+          }
+          
           // Логируем загрузку dialogState для отладки
           if (state.dialogState) {
             console.log('=== Dialog state loaded from localStorage:', {
               bottleneckId: state.dialogState.bottleneckId,
               messagesCount: state.dialogState.messages?.length || 0,
               phase: state.dialogState.phase,
-              messages: state.dialogState.messages?.map(m => ({ role: m.role, content: m.content.substring(0, 50) })),
             });
-          } else {
-            console.log('=== No dialog state in localStorage');
           }
+          console.log('=== DialogStates loaded from localStorage:', {
+            count: state.dialogStates?.size || 0,
+            bottleneckIds: state.dialogStates ? Array.from(state.dialogStates.keys()) : [],
+          });
         } else {
           console.log('=== No state in localStorage');
         }

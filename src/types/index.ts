@@ -3,7 +3,8 @@ export type Stage = "discovery" | "bottlenecks" | "prompt";
 export type ViewMode = 
   | "multi_agent_dialog"    // Диалог с мультиагентной системой
   | "bottlenecks_list"       // Список узких мест
-  | "bottleneck_detail";    // Детали конкретного узкого места
+  | "bottleneck_detail"     // Детали конкретного узкого места
+  | "data_management";      // Управление данными
 
 export type Priority = "high" | "medium" | "low";
 
@@ -201,5 +202,28 @@ export interface MultiAgentResponse {
   question?: string;  // Вопрос к пользователю (если нужен ответ)
   bottlenecks?: Bottleneck[];  // Найденные узкие места
 }
+
+// Типы для экспорта/импорта данных
+export interface SingleBottleneckExport {
+  type: 'single_bottleneck';
+  version: '1.0';
+  exportedAt: string;
+  bottleneck: Bottleneck;
+  dialogState: DialogState | null;
+  refinedBottleneck: RefinedBottleneck | null;
+}
+
+export interface FullExport {
+  type: 'full_export';
+  version: '1.0';
+  exportedAt: string;
+  businessData: BusinessData | null;
+  multiAgentState: MultiAgentState | null;
+  bottlenecks: Bottleneck[];
+  dialogStates: Record<string, DialogState>;
+  refinedBottlenecks: Record<string, RefinedBottleneck>;
+}
+
+export type ExportData = SingleBottleneckExport | FullExport;
 
 
