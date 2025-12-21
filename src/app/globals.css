@@ -8,16 +8,13 @@
   --background-end-rgb: 255, 255, 255;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
-}
+/* Убрали медиа-запрос для темной темы, чтобы избежать проблем с белым текстом на белом фоне */
+/* Приложение использует светлую тему, поэтому всегда используем темный текст */
 
 body {
-  color: rgb(var(--foreground-rgb));
+  /* Явно устанавливаем темный цвет текста для всех элементов */
+  /* Это предотвращает проблему с белым текстом на белом фоне в некоторых браузерах */
+  color: #1f2937; /* gray-800 */
   background: linear-gradient(
       to bottom,
       transparent,
